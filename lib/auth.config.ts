@@ -48,6 +48,18 @@ export const authConfig: NextAuthConfig = {
       }
       return session
     },
+    redirect({ url, baseUrl }) {
+      // Prevent cross-origin callback URLs (ex: stale localhost:8080)
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      try {
+        const target = new URL(url)
+        const base = new URL(baseUrl)
+        if (target.origin === base.origin) return url
+      } catch {
+        // ignore and fallback below
+      }
+      return `${baseUrl}/dashboard`
+    },
   },
   providers: [],
 }

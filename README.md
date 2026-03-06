@@ -89,7 +89,7 @@ Ouvrir [http://localhost:3000](http://localhost:3000).
 ## Déploiement (Railway)
 
 1. Créer un projet Railway, ajouter un service PostgreSQL.
-2. Variables d'environnement : copier depuis `.env.example`, adapter `DATABASE_URL`, `NEXTAUTH_URL`, etc.
+2. Variables d'environnement : copier depuis `.env.example`, adapter `DATABASE_URL`, `AUTH_URL` (ou `NEXTAUTH_URL`), etc.
 3. Build : `pnpm build` (ou équivalent Railway).
 4. Démarrer : `pnpm start`.
 

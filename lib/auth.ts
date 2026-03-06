@@ -5,6 +5,17 @@ import Resend from "next-auth/providers/resend"
 import { prisma } from "@/lib/db"
 import { authConfig } from "@/lib/auth.config"
 
+// Backward-compatible env aliases (Railway / legacy naming).
+if (!process.env.AUTH_SECRET && process.env.NEXT_AUTH_SECRET) {
+  process.env.AUTH_SECRET = process.env.NEXT_AUTH_SECRET
+}
+if (!process.env.AUTH_URL && process.env.NEXT_AUTH_URL) {
+  process.env.AUTH_URL = process.env.NEXT_AUTH_URL
+}
+if (!process.env.NEXTAUTH_URL && process.env.NEXT_AUTH_URL) {
+  process.env.NEXTAUTH_URL = process.env.NEXT_AUTH_URL
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   trustHost: true,
