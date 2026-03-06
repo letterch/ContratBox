@@ -1,15 +1,23 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { getDashboardData } from "@/app/actions/dashboard"
+import { prisma } from "@/lib/db"
 import { AppSidebar } from "@/components/app-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
-  const completed = (session?.user as { onboardingCompletedAt?: Date | null } | undefined)?.onboardingCompletedAt
-  if (session?.user && !completed) {
-    redirect("/onboarding")
+
+  if (session?.user?.id) {
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { onboardingCompletedAt: true },
+    })
+    if (!currentUser?.onboardingCompletedAt) {
+      redirect("/onboarding")
+    }
   }
+
   const dashboard = session?.user ? await getDashboardData() : null
   return (
     <div className="flex min-h-screen bg-background">

@@ -22,18 +22,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   callbacks: {
     ...authConfig.callbacks,
-    async session({ session, token }) {
-      if (session.user && token.id) {
-        (session.user as { id?: string }).id = token.id as string
-        ;(session.user as { role?: string }).role = token.role as string
-        const user = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          select: { onboardingCompletedAt: true },
-        })
-        ;(session.user as { onboardingCompletedAt?: Date | null }).onboardingCompletedAt = user?.onboardingCompletedAt ?? null
-      }
-      return session
-    },
   },
   providers: [
     Google({
