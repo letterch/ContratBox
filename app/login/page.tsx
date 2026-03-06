@@ -16,7 +16,9 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard"
+  const rawCallbackUrl = searchParams.get("callbackUrl")
+  // Security + UX: avoid redirecting to external or wrong-port callback URLs.
+  const callbackUrl = rawCallbackUrl?.startsWith("/") ? rawCallbackUrl : "/dashboard"
 
   return (
     <div className="min-h-screen flex bg-[oklch(0.10_0.04_255)]">
