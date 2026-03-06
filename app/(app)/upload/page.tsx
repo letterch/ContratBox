@@ -170,6 +170,14 @@ export default function UploadPage() {
   }, [])
   const members = pageData?.members ?? []
   const canAdd = pageData?.canAdd ?? true
+  const categoryOptions = CONTRACT_CATEGORY_SLUGS.map((slug) => ({
+    value: slug,
+    label: CONTRACT_CATEGORIES[slug],
+  }))
+  const memberOptions = members.map((m) => ({
+    value: m.id,
+    label: `${m.firstName}${m.lastName ? ` ${m.lastName}` : ""}`,
+  }))
 
   const handleFile = async (file: File) => {
     setFileName(file.name)
@@ -298,14 +306,27 @@ export default function UploadPage() {
                 <Label className="text-sm mb-1.5 block">Catégorie</Label>
                 <Select>
                   <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
-                  <SelectContent>{categories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    {categoryOptions.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label className="text-sm mb-1.5 block">Membre</Label>
                 <Select>
                   <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Assigner à..." /></SelectTrigger>
-                  <SelectContent>{members.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    <SelectItem value="household">Ménage entier</SelectItem>
+                    {memberOptions.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
               <div>

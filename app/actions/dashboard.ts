@@ -46,6 +46,7 @@ export async function getDashboardData() {
       name: household.name,
       memberCount: household.members.length,
       contractCount: household.contracts.length,
+      members: household.members,
     },
     totals: {
       monthly: monthlyTotal,
