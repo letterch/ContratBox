@@ -1,0 +1,243 @@
+// ContratBox — Schéma Prisma
+// PostgreSQL — ménages, contrats, extraction IA, abonnements
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ——— Auth (NextAuth) ———
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          String    @default("user") // user | admin
+  onboardingCompletedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts         Account[]
+  sessions         Session[]
+  households       Household[]       @relation("HouseholdOwner")
+  householdMembers HouseholdMember[]
+  contracts        Contract[]
+  aiChatThreads    AIChatThread[]
+  subscription     Subscription?
+  auditLogs        AuditLog[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?  @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ——— Ménage & membres ———
+model Household {
+  id        String   @id @default(cuid())
+  name      String   // ex: Famille Petronio
+  ownerId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members HouseholdMember[]
+  contracts Contract[]
+}
+
+model HouseholdMember {
+  id           String    @id @default(cuid())
+  householdId  String
+  userId       String?   // null = membre invité (pas encore utilisateur)
+  firstName    String
+  lastName     String?
+  role         String    // adult | child | other
+  dateOfBirth  DateTime? @db.Date
+  notes        String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  contracts  Contract[]
+}
+
+// ——— Contrats & documents ———
+model Contract {
+  id              String    @id @default(cuid())
+  householdId     String
+  createdById     String
+
+  // Métadonnées de base
+  title           String?
+  provider        String?
+  contractType    String?
+  category        String?   // slug: household_insurance, health_basic, etc.
+  policyNumber    String?
+  memberId        String?   // null = ménage entier
+  isHouseholdWide Boolean   @default(false)
+
+  // Finances
+  premiumAmount   Decimal?  @db.Decimal(12, 2)
+  premiumFrequency String?  // monthly | annual
+  currency       String    @default("CHF")
+
+  // Dates
+  startDate      DateTime? @db.Date
+  renewalDate    DateTime? @db.Date
+  endDate        DateTime? @db.Date
+  maturityDate   DateTime? @db.Date // hypothèque
+  cancellationNoticeDays Int?
+  autoRenewal    Boolean?
+  cancellationDeadline   DateTime? @db.Date // calculé
+
+  // Hypothèque
+  mortgageRate   Decimal?  @db.Decimal(6, 4)
+  interestAmountPaid    Decimal?  @db.Decimal(12, 2)
+
+  // Contenu IA
+  extractedText  String?   @db.Text
+  extractionConfidence  Decimal?  @db.Decimal(5, 2)
+  coverageSummary String?  @db.Text
+  exclusions     String?  @db.Text
+  importantClauses String? @db.Text
+  rawExtraction  Json?    // structure libre pour confiance par champ
+  extractedAt    DateTime?
+
+  status         String    @default("active") // active | cancelled | expired
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy  User       @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  member     HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  documents  Document[]
+  reminders  Reminder[]
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  contractId String
+  name       String
+  mimeType   String
+  sizeBytes  Int
+  r2Key      String   // clé dans R2
+  r2Bucket   String?
+  extractedText String? @db.Text
+  createdAt  DateTime @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+// ——— IA ———
+model AIChatThread {
+  id          String   @id @default(cuid())
+  userId      String
+  householdId String?
+  title       String?  @default("Nouvelle conversation")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AIChatMessage[]
+}
+
+model AIChatMessage {
+  id        String   @id @default(cuid())
+  threadId  String
+  role      String   // user | assistant | system
+  content   String   @db.Text
+  sources   String[] // IDs contrats ou extraits cités
+  createdAt DateTime @default(now())
+
+  thread AIChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+}
+
+// ——— Prompts admin ———
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  key         String   @unique // assistant_system | extraction_main | category_rules
+  name        String
+  content     String   @db.Text
+  version     Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ——— Abonnement Stripe ———
+model Subscription {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  stripePriceId        String?
+  status               String    // active | cancelled | past_due | trialing | free
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ——— Rappels ———
+model Reminder {
+  id           String    @id @default(cuid())
+  contractId   String
+  type         String    // cancellation_window | renewal_approaching | expiring_soon | mortgage_maturity
+  triggerAt    DateTime  @db.Date
+  sentAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+// ——— Audit / admin ———
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  resource   String?  // contract | user | household
+  resourceId String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
