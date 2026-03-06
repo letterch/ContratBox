@@ -91,7 +91,13 @@ Ouvrir [http://localhost:3000](http://localhost:3000).
 1. Créer un projet Railway, ajouter un service PostgreSQL.
 2. Variables d'environnement : copier depuis `.env.example`, adapter `DATABASE_URL`, `AUTH_URL` (ou `NEXTAUTH_URL`), etc.
 3. Build : `pnpm build` (ou équivalent Railway).
-4. Démarrer : `pnpm start`.
+4. Démarrer : `pnpm start` (applique automatiquement `prisma migrate deploy`).
+
+Si ta base est vide, tu peux aussi exécuter une fois en tâche admin :
+
+```bash
+pnpm db:push
+```
 
 ## Licence
 
