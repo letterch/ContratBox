@@ -3,7 +3,7 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { canAddContract, createContract } from "@/lib/services/contract"
-import { uploadDocument, documentKey } from "@/lib/services/storage"
+import { uploadDocument, documentKey, getStorageDebugConfig } from "@/lib/services/storage"
 import { extractTextFromFile } from "@/lib/services/ocr"
 import { extractContractData, type ExtractedContractData } from "@/lib/services/extraction"
 import type { ContractCategorySlug } from "@/lib/constants"
@@ -35,8 +35,19 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
   try {
     await uploadDocument(r2Key, buffer, mimeType)
   } catch (e) {
-    console.error("[upload]", e)
-    return { ok: false, error: "Échec du stockage du fichier (R2 timeout/config). Vérifiez R2_ENDPOINT, R2_ACCESS_KEY_ID et R2_SECRET_ACCESS_KEY." }
+    const details = e as { name?: string; message?: string; code?: string; $metadata?: { attempts?: number } }
+    console.error("[upload]", {
+      error: details?.message ?? String(e),
+      code: details?.code,
+      name: details?.name,
+      attempts: details?.$metadata?.attempts,
+      storage: getStorageDebugConfig(),
+    })
+    return {
+      ok: false,
+      error:
+        "Échec du stockage du fichier (R2 timeout/config). Vérifiez R2_ENDPOINT (API endpoint), R2_BUCKET_NAME et les clés R2.",
+    }
   }
 
   return {
