@@ -22,14 +22,25 @@ const categoryColors: Record<string, string> = {
   default: "text-muted-foreground bg-muted/50 border-border",
 }
 
-type Contract = { category?: string | null; premiumAmount?: unknown; premiumFrequency?: string | null }
+type Contract = {
+  category?: string | null
+  premiumAmount?: unknown
+  premiumFrequency?: string | null
+  rawExtraction?: unknown
+}
 
 export function CategoryGrid({ contracts = [] }: { contracts?: Contract[] }) {
   const byCategory = contracts.reduce<Record<string, { count: number; amount: number }>>((acc, c) => {
     const cat = c.category ?? "other"
     if (!acc[cat]) acc[cat] = { count: 0, amount: 0 }
     acc[cat].count++
-    const n = Number((c.premiumAmount as number) ?? 0)
+    let n = Number((c.premiumAmount as number) ?? 0)
+    if (cat === "rent_lease" && c.rawExtraction && typeof c.rawExtraction === "object") {
+      const raw = c.rawExtraction as Record<string, unknown>
+      const rent = Number(raw.leaseMonthlyRent ?? 0) || 0
+      const charges = Number(raw.leaseMonthlyCharges ?? 0) || 0
+      if (rent + charges > 0) n = rent + charges
+    }
     acc[cat].amount += c.premiumFrequency === "annual" ? n / 12 : n
     return acc
   }, {})

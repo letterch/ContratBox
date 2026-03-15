@@ -13,18 +13,16 @@ const suggestions = [
   "Explique-moi la clause de résiliation Swisscom",
 ]
 
-const contracts = [
-  { id: 1, name: "AXA Assurances", icon: Shield, color: "text-primary", bg: "bg-primary/8" },
-  { id: 2, name: "Swisscom Fibre", icon: Wifi, color: "text-[oklch(0.58_0.18_220)]", bg: "bg-[oklch(0.58_0.18_220)]/8" },
-  { id: 3, name: "UBS Hypothèque", icon: Home, color: "text-[oklch(0.56_0.15_162)]", bg: "bg-[oklch(0.56_0.15_162)]/8" },
-  { id: 4, name: "LCA Leasing", icon: Car, color: "text-[oklch(0.70_0.15_60)]", bg: "bg-[oklch(0.70_0.15_60)]/8" },
-  { id: 5, name: "Romande Énergie", icon: Zap, color: "text-[oklch(0.55_0.12_295)]", bg: "bg-[oklch(0.55_0.12_295)]/8" },
-]
-
 type Message = {
   role: "user" | "assistant"
   content: string
   sources?: string[]
+}
+
+type ContractItem = {
+  id: string
+  name: string
+  category?: string | null
 }
 
 const initialMessages: Message[] = [
@@ -35,50 +33,71 @@ const initialMessages: Message[] = [
   },
 ]
 
-function simulateResponse(question: string): Message {
-  const lower = question.toLowerCase()
-  if (lower.includes("résili") || lower.includes("swisscom")) {
-    return {
-      role: "assistant",
-      content: "D'après votre contrat Swisscom Fibre (N° SW-2021-038492) :\n\n**Délai de résiliation : 30 jours** avant la date de renouvellement.\n\nVotre prochaine date de renouvellement est le **15 mars 2025**. Cela signifie que le dernier délai pour résilier est le **13 février 2025**, soit dans **14 jours**.\n\nSi vous souhaitez résilier, je vous recommande d'agir immédiatement via NextLetter pour un envoi recommandé avec accusé de réception.",
-      sources: ["Swisscom Fibre — Art. 7.2 Résiliation", "Conditions Générales Swisscom 2023"],
-    }
-  }
-  if (lower.includes("assurance") || lower.includes("combien")) {
-    return {
-      role: "assistant",
-      content: "Voici un résumé de vos dépenses en assurances :\n\n- **AXA Assurances ménage** (Marc) : CHF 124/mois\n- **CSS LaMal** (Marc) : CHF 380/mois\n- **Total assurances** : **CHF 504/mois** soit CHF 6'048/an\n\nC'est 39% de vos dépenses contractuelles mensuelles totales (CHF 1'284). En Suisse, la moyenne est de 32% pour un ménage similaire.",
-      sources: ["AXA Assurances — Contrat 2024", "CSS Assurance — Polices Marc Dupont"],
-    }
-  }
-  return {
-    role: "assistant",
-    content: "Excellente question ! Je peux vous aider avec toutes les questions relatives à vos contrats. Pourriez-vous me préciser quel contrat vous intéresse, ou si vous avez une question générale sur les assurances ou le droit suisse des contrats ?",
-    sources: [],
-  }
+function getContractVisual(category?: string | null) {
+  const key = (category ?? "").toLowerCase()
+  if (key.includes("health") || key.includes("insurance")) return { icon: Shield, color: "text-primary", bg: "bg-primary/8" }
+  if (key.includes("telecom") || key.includes("internet")) return { icon: Wifi, color: "text-[oklch(0.58_0.18_220)]", bg: "bg-[oklch(0.58_0.18_220)]/8" }
+  if (key.includes("mortgage") || key.includes("home")) return { icon: Home, color: "text-[oklch(0.56_0.15_162)]", bg: "bg-[oklch(0.56_0.15_162)]/8" }
+  if (key.includes("car") || key.includes("leasing")) return { icon: Car, color: "text-[oklch(0.70_0.15_60)]", bg: "bg-[oklch(0.70_0.15_60)]/8" }
+  return { icon: Zap, color: "text-[oklch(0.55_0.12_295)]", bg: "bg-[oklch(0.55_0.12_295)]/8" }
 }
 
 export default function AIPage() {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
-  const [activeContract, setActiveContract] = useState<number | null>(null)
+  const [contracts, setContracts] = useState<ContractItem[]>([])
+  const [activeContract, setActiveContract] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const send = (text: string) => {
+  useEffect(() => {
+    fetch("/api/ai/contracts")
+      .then((r) => r.json())
+      .then((data) => setContracts(Array.isArray(data?.contracts) ? data.contracts : []))
+      .catch(() => setContracts([]))
+  }, [])
+
+  const send = async (text: string) => {
     if (!text.trim()) return
     const userMsg: Message = { role: "user", content: text }
     setMessages((prev) => [...prev, userMsg])
     setInput("")
     setLoading(true)
-    setTimeout(() => {
-      setMessages((prev) => [...prev, simulateResponse(text)])
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, activeContractId: activeContract }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || "Erreur IA")
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: String(data.answer ?? "Je n'ai pas pu répondre à cette question."),
+          sources: Array.isArray(data.sources) ? data.sources : [],
+        },
+      ])
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content:
+            "Je n'ai pas pu générer une réponse pour le moment. Réessayez dans quelques secondes, ou reformulez votre question avec le nom du contrat concerné.",
+          sources: [],
+        },
+      ])
+    } finally {
       setLoading(false)
-    }, 1200)
+    }
   }
 
   return (
@@ -100,23 +119,26 @@ export default function AIPage() {
         <div className="p-4">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-3">Vos contrats</p>
           <div className="flex flex-col gap-1">
-            {contracts.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => setActiveContract(activeContract === c.id ? null : c.id)}
-                className={cn(
-                  "flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all text-left",
-                  activeContract === c.id
-                    ? "bg-primary/8 border border-primary/15 text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                )}
-              >
-                <div className={`w-6 h-6 rounded-lg ${c.bg} flex items-center justify-center flex-shrink-0`}>
-                  <c.icon className={`w-3 h-3 ${c.color}`} />
-                </div>
-                {c.name}
-              </button>
-            ))}
+            {contracts.map((c) => {
+              const visual = getContractVisual(c.category)
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveContract(activeContract === c.id ? null : c.id)}
+                  className={cn(
+                    "flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all text-left",
+                    activeContract === c.id
+                      ? "bg-primary/8 border border-primary/15 text-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                  )}
+                >
+                  <div className={`w-6 h-6 rounded-lg ${visual.bg} flex items-center justify-center flex-shrink-0`}>
+                    <visual.icon className={`w-3 h-3 ${visual.color}`} />
+                  </div>
+                  {c.name}
+                </button>
+              )
+            })}
           </div>
         </div>
 
@@ -191,9 +213,7 @@ export default function AIPage() {
                     : "bg-card border border-border text-foreground rounded-tl-sm shadow-card"
                 )}>
                   {msg.content.split("\n").map((line, j) => (
-                    <p key={j} className={j > 0 ? "mt-2" : ""} dangerouslySetInnerHTML={{
-                      __html: line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-                    }} />
+                    <p key={j} className={j > 0 ? "mt-2" : ""}>{line}</p>
                   ))}
                 </div>
                 {msg.sources && msg.sources.length > 0 && (

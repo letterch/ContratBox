@@ -6,6 +6,11 @@ import { ArrowLeft, Calendar, User, FileText, MessageSquare, Send, Download, Ale
 import { getContractById } from "@/lib/services/contract"
 import { auth } from "@/lib/auth"
 import { CONTRACT_CATEGORIES } from "@/lib/constants"
+import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
+import { getMortgagePlan } from "@/lib/services/mortgage"
+import { getAppFeatures } from "@/lib/services/feature-flags"
+import { canUseMortgageSimulatorForUser } from "@/lib/services/subscription"
+import { MortgageSimulator } from "@/components/contracts/mortgage-simulator"
 
 const NEXTLETTER_BASE = process.env.NEXTLETTER_BASE_URL ?? "https://nextletter.ch"
 
@@ -20,8 +25,64 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const memberLabel = contract.isHouseholdWide ? "Ménage" : contract.member ? `${contract.member.firstName} ${contract.member.lastName ?? ""}`.trim() : "—"
   const premium = contract.premiumAmount != null ? Number(contract.premiumAmount) : null
   const renewalDate = contract.renewalDate ? new Date(contract.renewalDate) : null
-  const cancelDeadline = contract.cancellationDeadline ? new Date(contract.cancellationDeadline) : null
+  const rawExtraction = (contract.rawExtraction ?? {}) as Record<string, unknown>
+  const cancelDeadline = contract.cancellationDeadline
+    ? new Date(contract.cancellationDeadline)
+    : calculateCancellationDeadline(
+        renewalDate,
+        contract.cancellationNoticeDays ?? null,
+        Number(rawExtraction.cancellationNoticeValue),
+        rawExtraction.cancellationNoticeUnit as "days" | "months" | "years" | null
+      )
   const daysToCancel = cancelDeadline ? Math.ceil((cancelDeadline.getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null
+  const minimumCommitmentLabel =
+    rawExtraction.minimumCommitmentValue != null
+      ? `${String(rawExtraction.minimumCommitmentValue)} ${String(rawExtraction.minimumCommitmentUnit ?? "mois")}`
+      : null
+  const leaseMonthlyRent = Number(rawExtraction.leaseMonthlyRent ?? 0) || 0
+  const leaseMonthlyCharges = Number(rawExtraction.leaseMonthlyCharges ?? 0) || 0
+  const leaseTotalMonthly = leaseMonthlyRent + leaseMonthlyCharges
+  const leaseTacitRenewal =
+    typeof rawExtraction.leaseTacitRenewal === "boolean"
+      ? rawExtraction.leaseTacitRenewal
+      : null
+  const leaseEndDate = rawExtraction.leaseEndDate
+    ? new Date(String(rawExtraction.leaseEndDate))
+    : contract.endDate
+      ? new Date(contract.endDate)
+      : null
+  const leaseNoticeValue = Number(rawExtraction.leaseNoticeValue)
+  const leaseNoticeUnit = rawExtraction.leaseNoticeUnit as "days" | "months" | "years" | null
+  const leaseNoticeDays =
+    contract.cancellationNoticeDays ??
+    (Number.isFinite(leaseNoticeValue)
+      ? leaseNoticeUnit === "months"
+        ? Math.round(leaseNoticeValue * 30)
+        : leaseNoticeUnit === "years"
+          ? Math.round(leaseNoticeValue * 365)
+          : Math.round(leaseNoticeValue)
+      : null)
+  const leaseNoticeDeadline =
+    leaseEndDate && leaseNoticeDays
+      ? new Date(leaseEndDate.getTime() - leaseNoticeDays * 24 * 60 * 60 * 1000)
+      : null
+  const leaseDaysToNotice =
+    leaseNoticeDeadline
+      ? Math.ceil((leaseNoticeDeadline.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+      : null
+  const mortgagePlan = getMortgagePlan({
+    id: contract.id,
+    provider: contract.provider,
+    startDate: contract.startDate,
+    maturityDate: contract.maturityDate,
+    mortgageRate: contract.mortgageRate ? Number(contract.mortgageRate) : null,
+    rawExtraction: contract.rawExtraction,
+  })
+  const appFeatures = await getAppFeatures()
+  const isProUser = await canUseMortgageSimulatorForUser(session.user.id)
+  const canUseSimulator =
+    appFeatures.mortgageSimulatorEnabled &&
+    (!appFeatures.mortgageSimulatorProOnly || isProUser || session.user.role === "admin")
   const nextLetterUrl = new URL(NEXTLETTER_BASE)
   nextLetterUrl.searchParams.set("provider", contract.provider ?? "")
   nextLetterUrl.searchParams.set("category", contract.category ?? "")
@@ -124,6 +185,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                   { label: "Date de début", value: contract.startDate ? new Date(contract.startDate).toLocaleDateString("fr-CH") : null },
                   { label: "Renouvellement auto", value: contract.autoRenewal != null ? (contract.autoRenewal ? "Oui" : "Non") : null },
                   { label: "Préavis résiliation", value: contract.cancellationNoticeDays ? `${contract.cancellationNoticeDays} jours avant` : null },
+                  { label: "Durée minimale", value: minimumCommitmentLabel },
                 ].filter((f) => f.value).map((f) => (
                   <div key={f.label}>
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{f.label}</p>
@@ -180,6 +242,131 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 )}
               </div>
             </div>
+
+            {mortgagePlan.isMortgage && (
+              <div className="bg-card rounded-2xl border border-border shadow-card p-5">
+                <h3 className="font-semibold text-foreground text-sm mb-4">Vision hypothécaire</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Capital total</p>
+                    <p className="text-sm font-semibold">CHF {mortgagePlan.principalTotal.toLocaleString("fr-CH")}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Intérêts estimés</p>
+                    <p className="text-sm font-semibold">CHF {mortgagePlan.totalInterestEstimate.toLocaleString("fr-CH")}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Amortissement estimé</p>
+                    <p className="text-sm font-semibold">CHF {mortgagePlan.totalAmortizationEstimate.toLocaleString("fr-CH")}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Coût total estimé</p>
+                    <p className="text-sm font-semibold">CHF {mortgagePlan.totalCostEstimate.toLocaleString("fr-CH")}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {mortgagePlan.tranches.map((tranche) => {
+                    const elapsedRatio =
+                      tranche.startDate && tranche.endDate
+                        ? Math.min(
+                            1,
+                            Math.max(
+                              0,
+                              (Date.now() - tranche.startDate.getTime()) /
+                                Math.max(1, tranche.endDate.getTime() - tranche.startDate.getTime())
+                            )
+                          )
+                        : 0
+                    return (
+                      <div key={`${tranche.name}-${tranche.endDate?.toISOString() ?? "na"}`} className="rounded-xl border border-border p-3">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{tranche.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {tranche.amortizationType === "direct" ? "Amortissement direct" : tranche.amortizationType === "indirect" ? "Amortissement indirect" : "Amortissement non précisé"}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold">{tranche.annualRate.toFixed(2)}%</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {tranche.daysToMaturity != null ? `${tranche.daysToMaturity}j restants` : "Échéance non définie"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-muted overflow-hidden mb-2">
+                          <div className="h-full bg-primary transition-all" style={{ width: `${Math.round(elapsedRatio * 100)}%` }} />
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                          <p className="text-muted-foreground">Capital: <span className="text-foreground font-medium">CHF {tranche.principal.toLocaleString("fr-CH")}</span></p>
+                          <p className="text-muted-foreground">Durée: <span className="text-foreground font-medium">{tranche.durationMonths} mois</span></p>
+                          <p className="text-muted-foreground">Intérêts: <span className="text-foreground font-medium">CHF {tranche.totalInterestEstimate.toLocaleString("fr-CH")}</span></p>
+                          <p className="text-muted-foreground">Amort.: <span className="text-foreground font-medium">CHF {tranche.totalAmortizationEstimate.toLocaleString("fr-CH")}</span></p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {mortgagePlan.isMortgage && canUseSimulator && (
+              <MortgageSimulator
+                tranches={mortgagePlan.tranches.map((t) => ({
+                  name: t.name,
+                  principal: t.principal,
+                  annualRate: t.annualRate,
+                  durationMonths: t.durationMonths,
+                  amortizationType: t.amortizationType,
+                }))}
+                baselineInterest={mortgagePlan.totalInterestEstimate}
+                baselineAmortization={mortgagePlan.totalAmortizationEstimate}
+              />
+            )}
+            {mortgagePlan.isMortgage && !canUseSimulator && (
+              <div className="bg-card rounded-2xl border border-border shadow-card p-5">
+                <h3 className="font-semibold text-foreground text-sm mb-1">Simulateur hypothécaire</h3>
+                <p className="text-xs text-muted-foreground">
+                  Cette option est réservée aux abonnements Pro. Vous pouvez l’activer ou la rendre publique depuis l’admin.
+                </p>
+              </div>
+            )}
+            {contract.category === "rent_lease" && appFeatures.leaseInsightsEnabled && (
+              <div className="bg-card rounded-2xl border border-border shadow-card p-5">
+                <h3 className="font-semibold text-foreground text-sm mb-4">Vision bail locatif</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Loyer</p>
+                    <p className="text-sm font-semibold">CHF {leaseMonthlyRent.toLocaleString("fr-CH")}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Charges</p>
+                    <p className="text-sm font-semibold">CHF {leaseMonthlyCharges.toLocaleString("fr-CH")}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total mensuel</p>
+                    <p className="text-sm font-semibold">CHF {leaseTotalMonthly.toLocaleString("fr-CH")}</p>
+                  </div>
+                  <div className="rounded-xl bg-muted/40 p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Reconduction tacite</p>
+                    <p className="text-sm font-semibold">{leaseTacitRenewal == null ? "Non précisé" : leaseTacitRenewal ? "Oui" : "Non"}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Échéance bail</p>
+                    <p className="text-sm font-semibold">{leaseEndDate ? leaseEndDate.toLocaleDateString("fr-CH") : "—"}</p>
+                  </div>
+                  <div className="rounded-xl border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Préavis</p>
+                    <p className="text-sm font-semibold">{leaseNoticeDays ? `${leaseNoticeDays} jours` : "—"}</p>
+                  </div>
+                  <div className="rounded-xl border border-border p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Countdown résiliation</p>
+                    <p className="text-sm font-semibold">{leaseDaysToNotice != null ? `${leaseDaysToNotice} jours` : "—"}</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-4">

@@ -4,7 +4,24 @@ import { useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
 
 type Member = { id: string; firstName: string; lastName?: string | null }
-type Contract = { memberId?: string | null; isHouseholdWide?: boolean; premiumAmount?: unknown }
+type Contract = {
+  memberId?: string | null
+  isHouseholdWide?: boolean
+  premiumAmount?: unknown
+  category?: string | null
+  rawExtraction?: unknown
+}
+
+function getMonthlyCost(c: Contract): number {
+  if (c.category === "rent_lease" && c.rawExtraction && typeof c.rawExtraction === "object") {
+    const raw = c.rawExtraction as Record<string, unknown>
+    const rent = Number(raw.leaseMonthlyRent ?? 0) || 0
+    const charges = Number(raw.leaseMonthlyCharges ?? 0) || 0
+    const total = rent + charges
+    if (total > 0) return total
+  }
+  return Number((c as { premiumAmount?: number })?.premiumAmount) || 0
+}
 
 const defaultMembers = [
   { id: "all", name: "Tous", contracts: 0, cost: "CHF 0/mois", initials: null },
@@ -20,7 +37,7 @@ export function FamilyTabs({
   const [active, setActive] = useState("all")
   const members = useMemo(() => {
     if (rawMembers.length === 0) return defaultMembers
-    const allCost = contracts.reduce((sum, c) => sum + (Number((c as { premiumAmount?: number })?.premiumAmount) || 0), 0)
+    const allCost = contracts.reduce((sum, c) => sum + getMonthlyCost(c), 0)
     const tabs = [
       { id: "all", name: "Tous", contracts: contracts.length, cost: `CHF ${allCost.toLocaleString("fr-CH")}/mois`, initials: null as string | null },
     ]
@@ -28,7 +45,7 @@ export function FamilyTabs({
       const count = contracts.filter((c) => c.memberId === m.id).length
       const cost = contracts
         .filter((c) => c.memberId === m.id)
-        .reduce((s, c) => s + (Number((c as { premiumAmount?: number })?.premiumAmount) || 0), 0)
+        .reduce((s, c) => s + getMonthlyCost(c), 0)
       tabs.push({
         id: m.id,
         name: `${m.firstName}${m.lastName ? ` ${m.lastName}` : ""}`,

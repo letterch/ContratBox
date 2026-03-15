@@ -17,6 +17,7 @@ type ContractItem = {
   premiumAmount: unknown
   premiumFrequency: string | null
   renewalDate: Date | null
+  maturityDate?: Date | null
   cancellationDeadline: Date | null
   member?: { firstName: string; lastName?: string | null } | null
   isHouseholdWide?: boolean
@@ -31,6 +32,7 @@ const statusConfig = {
 function getStatus(c: ContractItem): keyof typeof statusConfig {
   const cancel = c.cancellationDeadline ? new Date(c.cancellationDeadline) : null
   const renewal = c.renewalDate ? new Date(c.renewalDate) : null
+  const maturity = c.maturityDate ? new Date(c.maturityDate) : null
   const now = new Date()
   if (cancel && cancel >= now) {
     const days = Math.ceil((cancel.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
@@ -40,6 +42,10 @@ function getStatus(c: ContractItem): keyof typeof statusConfig {
   if (renewal && renewal >= now) {
     const days = Math.ceil((renewal.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
     if (days <= 30) return "warning"
+  }
+  if (maturity && maturity >= now) {
+    const days = Math.ceil((maturity.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+    if (days <= 90) return "warning"
   }
   return "ok"
 }
@@ -170,6 +176,8 @@ export function ContractsListClient({
               const memberLabel = c.isHouseholdWide ? "Ménage" : c.member ? `${c.member.firstName} ${c.member.lastName ?? ""}`.trim() : "—"
               const daysLeft = c.renewalDate
                 ? Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+                : c.maturityDate
+                  ? Math.ceil((new Date(c.maturityDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
                 : null
               return (
                 <Link
@@ -204,7 +212,11 @@ export function ContractsListClient({
                         </p>
                       )}
                       <p className="text-[10px] text-muted-foreground">
-                        {c.renewalDate ? new Date(c.renewalDate).toLocaleDateString("fr-CH") : "—"}
+                        {c.renewalDate
+                          ? new Date(c.renewalDate).toLocaleDateString("fr-CH")
+                          : c.maturityDate
+                            ? new Date(c.maturityDate).toLocaleDateString("fr-CH")
+                            : "—"}
                       </p>
                     </div>
                   </div>

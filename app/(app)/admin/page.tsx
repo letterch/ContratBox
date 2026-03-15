@@ -9,6 +9,8 @@ import {
   ArrowUpRight, Shield, Zap, MoreHorizontal, Download, RefreshCw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { FeatureFlagsCard } from "@/components/admin/feature-flags-card"
+import { ProUsersManager } from "@/components/admin/pro-users-manager"
 
 const kpis = [
   { label: "Utilisateurs actifs", value: "4 821", delta: "+12%", icon: Users, color: "text-primary", bg: "bg-primary/8" },
@@ -320,6 +322,11 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <FeatureFlagsCard />
+            <div className="lg:col-span-2">
+              <ProUsersManager />
             </div>
           </div>
         )}

@@ -6,6 +6,7 @@ import { canAddContract, createContract } from "@/lib/services/contract"
 import { uploadDocument, documentKey, getStorageDebugConfig } from "@/lib/services/storage"
 import { extractTextFromFile } from "@/lib/services/ocr"
 import { extractContractData, type ExtractedContractData } from "@/lib/services/extraction"
+import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
 import type { ContractCategorySlug } from "@/lib/constants"
 
 export type UploadAndExtractResult = {
@@ -98,6 +99,19 @@ export async function saveContractFromUpload(data: SaveContractInput) {
   })
   if (!household) throw new Error("Aucun ménage trouvé")
 
+  const raw = (data.rawExtraction as Record<string, unknown> | null) ?? null
+  const noticeValue = raw && Number(raw.cancellationNoticeValue)
+  const noticeUnit = raw?.cancellationNoticeUnit as "days" | "months" | "years" | undefined
+  const computedDeadline =
+    data.cancellationDeadline
+      ? new Date(data.cancellationDeadline)
+      : calculateCancellationDeadline(
+          data.renewalDate ? new Date(data.renewalDate) : null,
+          data.cancellationNoticeDays ?? null,
+          Number.isFinite(noticeValue) ? noticeValue : null,
+          noticeUnit
+        )
+
   const contract = await prisma.contract.create({
     data: {
       householdId: household.id,
@@ -115,8 +129,16 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       renewalDate: data.renewalDate ? new Date(data.renewalDate) : null,
       endDate: data.endDate ? new Date(data.endDate) : null,
       maturityDate: data.maturityDate ? new Date(data.maturityDate) : null,
-      cancellationNoticeDays: data.cancellationNoticeDays ?? null,
-      cancellationDeadline: data.cancellationDeadline ? new Date(data.cancellationDeadline) : null,
+      cancellationNoticeDays:
+        data.cancellationNoticeDays ??
+        (Number.isFinite(noticeValue)
+          ? noticeUnit === "months"
+            ? Math.round((noticeValue as number) * 30)
+            : noticeUnit === "years"
+              ? Math.round((noticeValue as number) * 365)
+              : Math.round(noticeValue as number)
+          : null),
+      cancellationDeadline: computedDeadline,
       autoRenewal: data.autoRenewal ?? null,
       mortgageRate: data.mortgageRate ?? null,
       interestAmountPaid: data.interestAmountPaid ?? null,
@@ -125,7 +147,7 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       coverageSummary: data.coverageSummary ?? null,
       exclusions: data.exclusions ?? null,
       importantClauses: data.importantClauses ?? null,
-      rawExtraction: data.rawExtraction ?? null,
+      rawExtraction: data.rawExtraction ? (data.rawExtraction as unknown as Parameters<typeof prisma.contract.create>[0]["data"]["rawExtraction"]) : undefined,
       extractedAt: data.rawExtraction ? new Date() : null,
     },
   })
@@ -140,6 +162,73 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       extractedText: data.extractedText ?? null,
     },
   })
+
+  const extractionRaw = (data.rawExtraction ?? {}) as Record<string, unknown>
+  const tranches = Array.isArray(extractionRaw.mortgageTranches)
+    ? extractionRaw.mortgageTranches
+    : []
+  const reminderRows = tranches
+    .map((t) => {
+      const row = (t && typeof t === "object" ? (t as Record<string, unknown>) : null)
+      if (!row?.endDate) return null
+      const endDate = new Date(String(row.endDate))
+      if (Number.isNaN(endDate.getTime())) return null
+      const triggerAt = new Date(endDate)
+      triggerAt.setDate(triggerAt.getDate() - 90)
+      return {
+        contractId: contract.id,
+        type: "mortgage_maturity",
+        triggerAt,
+      } as const
+    })
+    .filter((x): x is { contractId: string; type: "mortgage_maturity"; triggerAt: Date } => Boolean(x))
+
+  if (reminderRows.length) {
+    await prisma.reminder.createMany({ data: reminderRows })
+  } else if (data.maturityDate) {
+    const endDate = new Date(data.maturityDate)
+    if (!Number.isNaN(endDate.getTime())) {
+      const triggerAt = new Date(endDate)
+      triggerAt.setDate(triggerAt.getDate() - 90)
+      await prisma.reminder.create({
+        data: {
+          contractId: contract.id,
+          type: "mortgage_maturity",
+          triggerAt,
+        },
+      })
+    }
+  }
+
+  const leaseEndDateRaw =
+    (typeof extractionRaw.leaseEndDate === "string" && extractionRaw.leaseEndDate) ||
+    data.endDate ||
+    data.renewalDate ||
+    null
+  if (leaseEndDateRaw) {
+    const leaseEndDate = new Date(leaseEndDateRaw)
+    if (!Number.isNaN(leaseEndDate.getTime())) {
+      const noticeDays =
+        data.cancellationNoticeDays ??
+        (typeof extractionRaw.leaseNoticeValue === "number"
+          ? extractionRaw.leaseNoticeUnit === "months"
+            ? Math.round(extractionRaw.leaseNoticeValue * 30)
+            : extractionRaw.leaseNoticeUnit === "years"
+              ? Math.round(extractionRaw.leaseNoticeValue * 365)
+              : Math.round(extractionRaw.leaseNoticeValue)
+          : null)
+      const triggerAt = noticeDays
+        ? new Date(leaseEndDate.getTime() - noticeDays * 24 * 60 * 60 * 1000)
+        : new Date(leaseEndDate.getTime() - 60 * 24 * 60 * 60 * 1000)
+      await prisma.reminder.create({
+        data: {
+          contractId: contract.id,
+          type: "lease_notice_window",
+          triggerAt,
+        },
+      })
+    }
+  }
 
   return { ok: true, contractId: contract.id }
 }

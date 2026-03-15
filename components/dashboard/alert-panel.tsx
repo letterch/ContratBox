@@ -10,12 +10,24 @@ type ContractAlert = {
   maturityDate?: Date | null
 }
 
+type MortgageAlert = {
+  id: string
+  contractId: string
+  provider: string
+  trancheName: string
+  annualRate: number
+  maturityDate: Date
+  daysLeft: number
+}
+
 export function AlertPanel({
   cancellationContracts = [],
   renewalContracts = [],
+  mortgageAlerts = [],
 }: {
   cancellationContracts?: ContractAlert[]
   renewalContracts?: ContractAlert[]
+  mortgageAlerts?: MortgageAlert[]
 }) {
   const alerts: { id: string; title: string; description: string; daysLeft: number; href: string; type: "urgent" | "warning" | "info"; icon: typeof AlertTriangle; color: string; bg: string; border: string }[] = []
   const now = new Date()
@@ -54,6 +66,21 @@ export function AlertPanel({
       border: "border-[oklch(0.58_0.18_220)]/20",
     })
   }
+  for (const m of mortgageAlerts) {
+    alerts.push({
+      id: m.id,
+      title: m.provider,
+      description: `Tranche ${m.trancheName} · ${m.annualRate.toFixed(2)}%`,
+      daysLeft: m.daysLeft,
+      href: `/contracts/${m.contractId}`,
+      type: m.daysLeft <= 60 ? "warning" : "info",
+      icon: Home,
+      color: m.daysLeft <= 60 ? "text-[oklch(0.70_0.15_60)]" : "text-[oklch(0.58_0.18_220)]",
+      bg: m.daysLeft <= 60 ? "bg-[oklch(0.70_0.15_60)]/8" : "bg-[oklch(0.58_0.18_220)]/8",
+      border: m.daysLeft <= 60 ? "border-[oklch(0.70_0.15_60)]/20" : "border-[oklch(0.58_0.18_220)]/20",
+    })
+  }
+  alerts.sort((a, b) => a.daysLeft - b.daysLeft)
   const urgentCount = alerts.filter((a) => a.type === "urgent").length
 
   return (

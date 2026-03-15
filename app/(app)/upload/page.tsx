@@ -40,12 +40,45 @@ function ReviewStep({
   const [isHouseholdWide, setIsHouseholdWide] = useState(!e.memberId)
   const [premiumAmount, setPremiumAmount] = useState(String(e.monthlyPremium ?? e.annualPremium ?? ""))
   const [premiumFreq, setPremiumFreq] = useState((e.premiumFrequency as string) ?? "monthly")
+  const [startDate, setStartDate] = useState(e.startDate ? String(e.startDate).slice(0, 10) : "")
   const [renewalDate, setRenewalDate] = useState(e.renewalDate ? String(e.renewalDate).slice(0, 10) : "")
   const [policyNumber, setPolicyNumber] = useState(String(e.policyNumber ?? ""))
   const [cancellationNoticeDays, setCancellationNoticeDays] = useState(e.cancellationNoticeDays ? String(e.cancellationNoticeDays) : "")
+  const [mortgagePrincipal, setMortgagePrincipal] = useState(
+    e.mortgagePrincipal != null ? String(e.mortgagePrincipal) : ""
+  )
+  const [mortgageRate, setMortgageRate] = useState(e.mortgageRate != null ? String(e.mortgageRate) : "")
+  const [amortizationType, setAmortizationType] = useState(
+    String(e.amortizationType ?? "none")
+  )
+  const [leaseMonthlyRent, setLeaseMonthlyRent] = useState(
+    e.leaseMonthlyRent != null ? String(e.leaseMonthlyRent) : ""
+  )
+  const [leaseMonthlyCharges, setLeaseMonthlyCharges] = useState(
+    e.leaseMonthlyCharges != null ? String(e.leaseMonthlyCharges) : ""
+  )
+  const [leaseTacitRenewal, setLeaseTacitRenewal] = useState(
+    String(e.leaseTacitRenewal ?? "unknown")
+  )
+  const [leaseEndDate, setLeaseEndDate] = useState(
+    e.leaseEndDate ? String(e.leaseEndDate).slice(0, 10) : ""
+  )
 
   const handleSubmit = (ev: React.FormEvent) => {
     ev.preventDefault()
+    const normalizedRawExtraction = {
+      ...e,
+      mortgagePrincipal: mortgagePrincipal ? parseFloat(mortgagePrincipal) : null,
+      mortgageRate: mortgageRate ? parseFloat(mortgageRate) : null,
+      amortizationType: amortizationType || null,
+      leaseMonthlyRent: leaseMonthlyRent ? parseFloat(leaseMonthlyRent) : null,
+      leaseMonthlyCharges: leaseMonthlyCharges ? parseFloat(leaseMonthlyCharges) : null,
+      leaseTacitRenewal: leaseTacitRenewal === "yes" ? true : leaseTacitRenewal === "no" ? false : null,
+      leaseEndDate: leaseEndDate || null,
+    }
+    const inferredMonthly = leaseMonthlyRent || leaseMonthlyCharges
+      ? (parseFloat(leaseMonthlyRent || "0") + parseFloat(leaseMonthlyCharges || "0"))
+      : null
     onSave({
       file: extractedState.file,
       provider: provider || null,
@@ -53,20 +86,25 @@ function ReviewStep({
       policyNumber: policyNumber || null,
       memberId: isHouseholdWide ? null : (memberId || null),
       isHouseholdWide,
-      premiumAmount: premiumAmount ? parseFloat(premiumAmount) : null,
+      premiumAmount: premiumAmount ? parseFloat(premiumAmount) : inferredMonthly,
       premiumFrequency: premiumFreq === "annual" ? "annual" : "monthly",
+      startDate: startDate || null,
       renewalDate: renewalDate || null,
       cancellationNoticeDays: cancellationNoticeDays ? parseInt(cancellationNoticeDays, 10) : null,
+      mortgageRate: mortgageRate ? parseFloat(mortgageRate) : null,
+      endDate: category === "rent_lease" ? (leaseEndDate || null) : null,
       extractedText: extractedState.extractedText || null,
       extractionConfidence: (e.confidenceScore as number) ?? null,
       coverageSummary: (e.keyCoverageSummary as string) ?? null,
       exclusions: (e.exclusions as string) ?? null,
       importantClauses: (e.importantClauses as string) ?? null,
-      rawExtraction: e,
+      rawExtraction: normalizedRawExtraction,
     })
   }
 
   const confidence = (e.confidenceScore as number) ?? 0
+  const isMortgage = category === "mortgage" || e.suggestedCategory === "mortgage"
+  const isLease = category === "rent_lease" || e.suggestedCategory === "rent_lease"
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div className="bg-card rounded-2xl border border-border shadow-card p-5">
@@ -83,8 +121,10 @@ function ReviewStep({
           {[
             { label: "Prestataire", value: e.provider },
             { label: "Montant", value: e.monthlyPremium ?? e.annualPremium },
+            { label: "Date de début", value: e.startDate },
             { label: "Renouvellement", value: e.renewalDate },
             { label: "Préavis (jours)", value: e.cancellationNoticeDays },
+            { label: "Durée minimale", value: e.minimumCommitmentValue ? `${String(e.minimumCommitmentValue)} ${String(e.minimumCommitmentUnit ?? "mois")}` : null },
           ].filter((x) => x.value != null).map((item) => (
             <div key={String(item.label)} className="p-3 rounded-xl bg-muted/40">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</p>
@@ -134,6 +174,10 @@ function ReviewStep({
           </Select>
         </div>
         <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Date de début</Label>
+          <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-xl h-9 text-sm" />
+        </div>
+        <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Date de renouvellement</Label>
           <Input type="date" value={renewalDate} onChange={(e) => setRenewalDate(e.target.value)} className="rounded-xl h-9 text-sm" />
         </div>
@@ -145,6 +189,56 @@ function ReviewStep({
           <Label className="text-xs text-muted-foreground mb-1 block">Préavis (jours)</Label>
           <Input type="number" value={cancellationNoticeDays} onChange={(e) => setCancellationNoticeDays(e.target.value)} className="rounded-xl h-9 text-sm" />
         </div>
+        {isMortgage && (
+          <>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Capital hypothécaire (CHF)</Label>
+              <Input type="number" step="0.01" value={mortgagePrincipal} onChange={(e) => setMortgagePrincipal(e.target.value)} className="rounded-xl h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Taux hypothécaire (%)</Label>
+              <Input type="number" step="0.001" value={mortgageRate} onChange={(e) => setMortgageRate(e.target.value)} className="rounded-xl h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Amortissement</Label>
+              <Select value={amortizationType} onValueChange={setAmortizationType}>
+                <SelectTrigger className="rounded-xl h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Aucun / non précisé</SelectItem>
+                  <SelectItem value="direct">Direct</SelectItem>
+                  <SelectItem value="indirect">Indirect</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+        {isLease && (
+          <>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Loyer mensuel hors charges (CHF)</Label>
+              <Input type="number" step="0.01" value={leaseMonthlyRent} onChange={(e) => setLeaseMonthlyRent(e.target.value)} className="rounded-xl h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Charges mensuelles (CHF)</Label>
+              <Input type="number" step="0.01" value={leaseMonthlyCharges} onChange={(e) => setLeaseMonthlyCharges(e.target.value)} className="rounded-xl h-9 text-sm" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Renouvellement tacite</Label>
+              <Select value={leaseTacitRenewal} onValueChange={setLeaseTacitRenewal}>
+                <SelectTrigger className="rounded-xl h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unknown">Non précisé</SelectItem>
+                  <SelectItem value="yes">Oui</SelectItem>
+                  <SelectItem value="no">Non</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Échéance du bail</Label>
+              <Input type="date" value={leaseEndDate} onChange={(e) => setLeaseEndDate(e.target.value)} className="rounded-xl h-9 text-sm" />
+            </div>
+          </>
+        )}
         {saveError && <p className="text-sm text-destructive">{saveError}</p>}
         <Button type="submit" disabled={saving} className="w-full h-11 rounded-xl bg-primary text-primary-foreground shadow-brand mt-auto">
           <Check className="w-4 h-4 mr-2" />

@@ -17,11 +17,13 @@ type ContractRow = {
   premiumAmount?: { toNumber?: () => number } | number | null
   premiumFrequency?: string | null
   renewalDate?: Date | null
+  maturityDate?: Date | null
   cancellationDeadline?: Date | null
 }
 
 function getStatus(c: ContractRow): keyof typeof statusConfig {
   const renewal = c.renewalDate ? new Date(c.renewalDate) : null
+  const maturity = c.maturityDate ? new Date(c.maturityDate) : null
   const cancel = c.cancellationDeadline ? new Date(c.cancellationDeadline) : null
   const now = new Date()
   if (cancel && cancel >= now) {
@@ -32,6 +34,10 @@ function getStatus(c: ContractRow): keyof typeof statusConfig {
   if (renewal) {
     const days = Math.ceil((renewal.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
     if (days <= 30) return "warning"
+  }
+  if (maturity) {
+    const days = Math.ceil((maturity.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+    if (days <= 90) return "warning"
   }
   return "ok"
 }
@@ -75,7 +81,11 @@ export function RecentContracts({ contracts = [] }: { contracts?: ContractRow[] 
                     {status.label}
                   </Badge>
                   <span className="text-xs text-muted-foreground w-20 text-right">
-                    {c.renewalDate ? new Date(c.renewalDate).toLocaleDateString("fr-CH") : "—"}
+                    {c.renewalDate
+                      ? new Date(c.renewalDate).toLocaleDateString("fr-CH")
+                      : c.maturityDate
+                        ? new Date(c.maturityDate).toLocaleDateString("fr-CH")
+                        : "—"}
                   </span>
                 </div>
                 <div className="text-right flex-shrink-0">

@@ -5,6 +5,7 @@ import { FamilyTabs } from "@/components/dashboard/family-tabs"
 import { CategoryGrid } from "@/components/dashboard/category-grid"
 import { RecentContracts } from "@/components/dashboard/recent-contracts"
 import { QuickAddButton } from "@/components/dashboard/quick-add-button"
+import { CostInsightsPanel } from "@/components/dashboard/cost-insights"
 import { getDashboardData } from "@/app/actions/dashboard"
 import { Bell, ChevronDown } from "lucide-react"
 
@@ -43,6 +44,7 @@ export default async function DashboardPage() {
           contractCount={data?.household?.contractCount ?? 0}
           alertCount={data?.contractsInCancellationWindow?.length ?? 0}
         />
+        <CostInsightsPanel insights={data?.costInsights} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 flex flex-col gap-6">
             <FamilyTabs members={data?.household?.members} contracts={data?.contracts} />
@@ -51,6 +53,7 @@ export default async function DashboardPage() {
           <AlertPanel
             cancellationContracts={data?.contractsInCancellationWindow}
             renewalContracts={data?.contractsNearingRenewal}
+            mortgageAlerts={data?.mortgageAlerts}
           />
         </div>
         <RecentContracts contracts={data?.recentContracts} />
