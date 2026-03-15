@@ -36,7 +36,7 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
     await uploadDocument(r2Key, buffer, mimeType)
   } catch (e) {
     console.error("[upload]", e)
-    return { ok: false, error: "Échec du stockage du fichier." }
+    return { ok: false, error: "Échec du stockage du fichier (R2 timeout/config). Vérifiez R2_ENDPOINT, R2_ACCESS_KEY_ID et R2_SECRET_ACCESS_KEY." }
   }
 
   return {

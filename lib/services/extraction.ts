@@ -26,6 +26,7 @@ export type ExtractedContractData = {
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 const MODEL = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet"
+const EXTRACTION_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 30000)
 
 function buildExtractionPrompt(text: string): string {
   const categoriesList = Object.entries(CONTRACT_CATEGORIES)
@@ -72,31 +73,41 @@ export async function extractContractData(text: string): Promise<ExtractedContra
     console.warn("[extraction] OPENROUTER_API_KEY manquant")
     return {}
   }
-  try {
-    const res = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.NEXTAUTH_URL ?? "http://localhost:3000",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [{ role: "user", content: buildExtractionPrompt(text) }],
-        max_tokens: 2000,
-      }),
-    })
-    if (!res.ok) {
-      const err = await res.text()
-      throw new Error(`OpenRouter error: ${res.status} ${err}`)
+  let lastError: unknown = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), EXTRACTION_TIMEOUT_MS)
+    try {
+      const res = await fetch(OPENROUTER_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+          "HTTP-Referer": process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [{ role: "user", content: buildExtractionPrompt(text) }],
+          max_tokens: 2000,
+        }),
+        signal: controller.signal,
+      })
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(`OpenRouter error: ${res.status} ${err}`)
+      }
+      const data = await res.json()
+      const content = data?.choices?.[0]?.message?.content?.trim()
+      if (!content) throw new Error("Réponse vide")
+      const parsed = JSON.parse(content) as ExtractedContractData
+      return parsed
+    } catch (err) {
+      lastError = err
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1000))
+    } finally {
+      clearTimeout(timeout)
     }
-    const data = await res.json()
-    const content = data?.choices?.[0]?.message?.content?.trim()
-    if (!content) throw new Error("Réponse vide")
-    const parsed = JSON.parse(content) as ExtractedContractData
-    return parsed
-  } catch (err) {
-    console.error("[extraction]", err)
-    return {}
   }
+  console.error("[extraction]", lastError)
+  return {}
 }
