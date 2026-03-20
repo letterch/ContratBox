@@ -106,8 +106,8 @@ export function AppSidebar({ session, householdName = "Mon ménage", contractCou
         <div className="rounded-xl bg-warning/10 border border-warning/20 px-3 py-2.5 flex items-start gap-2.5">
           <Bell className="w-3.5 h-3.5 text-warning mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-sidebar-foreground text-xs font-medium">2 échéances proches</p>
-            <p className="text-sidebar-foreground/50 text-[10px] mt-0.5">Swisscom, LCA Finance</p>
+            <p className="text-sidebar-foreground text-xs font-medium">Échéances à venir</p>
+            <p className="text-sidebar-foreground/50 text-[10px] mt-0.5">Consultez le calendrier du dashboard</p>
           </div>
         </div>
       </div>

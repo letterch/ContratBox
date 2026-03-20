@@ -18,7 +18,39 @@ type ContractRow = {
   premiumFrequency?: string | null
   renewalDate?: Date | null
   maturityDate?: Date | null
+  endDate?: Date | null
   cancellationDeadline?: Date | null
+}
+
+function getKeyDate(c: ContractRow): Date | null {
+  if (c.cancellationDeadline) return new Date(c.cancellationDeadline)
+  if (c.renewalDate) return new Date(c.renewalDate)
+  if (c.maturityDate) return new Date(c.maturityDate)
+  if (c.endDate) return new Date(c.endDate)
+  return null
+}
+
+function getDateLabel(c: ContractRow): string {
+  if (c.cancellationDeadline) return "Délai de résiliation"
+  if (c.maturityDate) return "Échéance hypothécaire"
+  if (c.endDate) return "Fin de contrat"
+  if (c.renewalDate) return "Renouvellement"
+  return "Date"
+}
+
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("fr-CH", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function formatRelative(daysLeft: number): string {
+  if (daysLeft <= 0) return "Aujourd'hui"
+  if (daysLeft === 1) return "Demain"
+  return `Dans ${daysLeft} jours`
 }
 
 function getStatus(c: ContractRow): keyof typeof statusConfig {
@@ -63,6 +95,10 @@ export function RecentContracts({ contracts = [] }: { contracts?: ContractRow[] 
             const status = statusConfig[getStatus(c)]
             const amount = c.premiumAmount != null ? Number(c.premiumAmount) : null
             const memberLabel = c.isHouseholdWide ? "Ménage" : c.member ? `${c.member.firstName}${c.member.lastName ? ` ${c.member.lastName}` : ""}` : "—"
+            const keyDate = getKeyDate(c)
+            const daysLeft = keyDate
+              ? Math.ceil((keyDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+              : null
             return (
               <Link
                 key={c.id}
@@ -80,19 +116,23 @@ export function RecentContracts({ contracts = [] }: { contracts?: ContractRow[] 
                   <Badge variant="outline" className={`text-[10px] border ${status.class}`}>
                     {status.label}
                   </Badge>
-                  <span className="text-xs text-muted-foreground w-20 text-right">
-                    {c.renewalDate
-                      ? new Date(c.renewalDate).toLocaleDateString("fr-CH")
-                      : c.maturityDate
-                        ? new Date(c.maturityDate).toLocaleDateString("fr-CH")
-                        : "—"}
-                  </span>
+                  <div className="text-right">
+                    <p className="text-[10px] text-muted-foreground">
+                      {keyDate ? getDateLabel(c) : "Aucune date"}
+                    </p>
+                    <p className="text-xs text-foreground/80">
+                      {keyDate ? formatDate(keyDate) : "—"}
+                    </p>
+                  </div>
                 </div>
                 <div className="text-right flex-shrink-0">
                   <p className="text-sm font-semibold text-foreground">
                     {amount != null ? `CHF ${amount.toLocaleString("fr-CH")}` : "—"}
                   </p>
                   <p className="text-[10px] text-muted-foreground">/{c.premiumFrequency === "annual" ? "an" : "mois"}</p>
+                  {daysLeft != null && daysLeft >= 0 && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{formatRelative(daysLeft)}</p>
+                  )}
                 </div>
                 <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors hidden sm:block" />
               </Link>

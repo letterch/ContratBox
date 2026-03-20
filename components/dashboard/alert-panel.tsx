@@ -8,6 +8,7 @@ type ContractAlert = {
   renewalDate?: Date | null
   cancellationDeadline?: Date | null
   maturityDate?: Date | null
+  endDate?: Date | null
 }
 
 type MortgageAlert = {
@@ -29,8 +30,32 @@ export function AlertPanel({
   renewalContracts?: ContractAlert[]
   mortgageAlerts?: MortgageAlert[]
 }) {
-  const alerts: { id: string; title: string; description: string; daysLeft: number; href: string; type: "urgent" | "warning" | "info"; icon: typeof AlertTriangle; color: string; bg: string; border: string }[] = []
+  const alerts: {
+    id: string
+    title: string
+    description: string
+    dueDate: Date
+    daysLeft: number
+    href: string
+    type: "urgent" | "warning" | "info"
+    icon: typeof AlertTriangle
+    color: string
+    bg: string
+    border: string
+  }[] = []
   const now = new Date()
+  const formatDate = (date: Date) =>
+    date.toLocaleDateString("fr-CH", {
+      weekday: "short",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  const formatRelative = (daysLeft: number) => {
+    if (daysLeft <= 0) return "Aujourd'hui"
+    if (daysLeft === 1) return "Demain"
+    return `Dans ${daysLeft} jours`
+  }
   for (const c of cancellationContracts) {
     const d = c.cancellationDeadline ? new Date(c.cancellationDeadline) : null
     if (!d || d < now) continue
@@ -39,6 +64,7 @@ export function AlertPanel({
       id: c.id,
       title: c.provider ?? "Contrat",
       description: "Délai de résiliation",
+      dueDate: d,
       daysLeft,
       href: `/contracts/${c.id}`,
       type: daysLeft <= 14 ? "urgent" : "warning",
@@ -50,13 +76,20 @@ export function AlertPanel({
   }
   for (const c of renewalContracts) {
     if (alerts.some((a) => a.id === c.id)) continue
-    const d = c.renewalDate ? new Date(c.renewalDate) : null
+    const d = c.renewalDate
+      ? new Date(c.renewalDate)
+      : c.maturityDate
+        ? new Date(c.maturityDate)
+        : c.endDate
+          ? new Date(c.endDate)
+          : null
     if (!d || d < now) continue
     const daysLeft = Math.ceil((d.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
     alerts.push({
       id: c.id,
       title: c.provider ?? "Contrat",
-      description: c.maturityDate ? "Échéance hypothèque" : "Renouvellement",
+      description: c.maturityDate ? "Échéance hypothèque" : c.endDate ? "Fin de contrat" : "Renouvellement",
+      dueDate: d,
       daysLeft,
       href: `/contracts/${c.id}`,
       type: "info",
@@ -67,10 +100,12 @@ export function AlertPanel({
     })
   }
   for (const m of mortgageAlerts) {
+    const dueDate = new Date(m.maturityDate)
     alerts.push({
       id: m.id,
       title: m.provider,
       description: `Tranche ${m.trancheName} · ${m.annualRate.toFixed(2)}%`,
+      dueDate,
       daysLeft: m.daysLeft,
       href: `/contracts/${m.contractId}`,
       type: m.daysLeft <= 60 ? "warning" : "info",
@@ -109,9 +144,10 @@ export function AlertPanel({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{a.title}</p>
                   <p className="text-xs text-muted-foreground">{a.description}</p>
+                  <p className="text-[11px] text-foreground/80 mt-0.5">{formatDate(a.dueDate)}</p>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className={`text-xs font-bold ${a.color}`}>{a.daysLeft}j</p>
+                  <p className={`text-xs font-bold ${a.color}`}>{formatRelative(a.daysLeft)}</p>
                   <span className={`text-[10px] ${a.color} flex items-center gap-0.5`}>
                     Voir <ChevronRight className="w-2.5 h-2.5" />
                   </span>
@@ -129,12 +165,19 @@ export function AlertPanel({
             <p className="text-xs text-muted-foreground">Aucune échéance à venir.</p>
           ) : (
             alerts.slice(0, 5).map((a) => (
-              <div key={a.id} className="flex items-center gap-3">
-                <div className="w-1 h-1 rounded-full bg-border flex-shrink-0" />
-                <Link href={a.href} className="text-xs text-muted-foreground hover:text-foreground">
-                  {a.title} — {a.daysLeft}j
-                </Link>
-              </div>
+              <Link
+                key={a.id}
+                href={a.href}
+                className="rounded-lg border border-border/60 px-3 py-2.5 hover:bg-muted/40 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium text-foreground truncate">{a.title}</p>
+                  <span className={`text-[10px] font-semibold ${a.color}`}>{formatRelative(a.daysLeft)}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {a.description} · {formatDate(a.dueDate)}
+                </p>
+              </Link>
             ))
           )}
         </div>

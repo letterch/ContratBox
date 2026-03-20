@@ -18,6 +18,7 @@ type ContractItem = {
   premiumFrequency: string | null
   renewalDate: Date | null
   maturityDate?: Date | null
+  endDate?: Date | null
   cancellationDeadline: Date | null
   member?: { firstName: string; lastName?: string | null } | null
   isHouseholdWide?: boolean
@@ -48,6 +49,37 @@ function getStatus(c: ContractItem): keyof typeof statusConfig {
     if (days <= 90) return "warning"
   }
   return "ok"
+}
+
+function getKeyDate(c: ContractItem): Date | null {
+  if (c.cancellationDeadline) return new Date(c.cancellationDeadline)
+  if (c.renewalDate) return new Date(c.renewalDate)
+  if (c.maturityDate) return new Date(c.maturityDate)
+  if (c.endDate) return new Date(c.endDate)
+  return null
+}
+
+function getDateLabel(c: ContractItem): string {
+  if (c.cancellationDeadline) return "Délai de résiliation"
+  if (c.maturityDate) return "Échéance hypothécaire"
+  if (c.endDate) return "Fin de contrat"
+  if (c.renewalDate) return "Renouvellement"
+  return "Date"
+}
+
+function formatDate(date: Date): string {
+  return date.toLocaleDateString("fr-CH", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+function formatRelative(daysLeft: number): string {
+  if (daysLeft <= 0) return "Aujourd'hui"
+  if (daysLeft === 1) return "Demain"
+  return `Dans ${daysLeft} jours`
 }
 
 export function ContractsListClient({
@@ -174,10 +206,9 @@ export function ContractsListClient({
               const status = statusConfig[getStatus(c)]
               const amount = c.premiumAmount != null ? Number(c.premiumAmount) : null
               const memberLabel = c.isHouseholdWide ? "Ménage" : c.member ? `${c.member.firstName} ${c.member.lastName ?? ""}`.trim() : "—"
-              const daysLeft = c.renewalDate
-                ? Math.ceil((new Date(c.renewalDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
-                : c.maturityDate
-                  ? Math.ceil((new Date(c.maturityDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+              const keyDate = getKeyDate(c)
+              const daysLeft = keyDate
+                ? Math.ceil((keyDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
                 : null
               return (
                 <Link
@@ -208,15 +239,12 @@ export function ContractsListClient({
                       {daysLeft != null && (
                         <p className={cn("text-xs font-medium flex items-center gap-1", daysLeft <= 30 ? "text-[oklch(0.57_0.20_25)]" : daysLeft <= 60 ? "text-[oklch(0.70_0.15_60)]" : "text-muted-foreground")}>
                           <Clock className="w-3 h-3" />
-                          {daysLeft}j
+                          {formatRelative(daysLeft)}
                         </p>
                       )}
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{keyDate ? getDateLabel(c) : "Aucune date"}</p>
                       <p className="text-[10px] text-muted-foreground">
-                        {c.renewalDate
-                          ? new Date(c.renewalDate).toLocaleDateString("fr-CH")
-                          : c.maturityDate
-                            ? new Date(c.maturityDate).toLocaleDateString("fr-CH")
-                            : "—"}
+                        {keyDate ? formatDate(keyDate) : "—"}
                       </p>
                     </div>
                   </div>
@@ -230,6 +258,10 @@ export function ContractsListClient({
               const status = statusConfig[getStatus(c)]
               const amount = c.premiumAmount != null ? Number(c.premiumAmount) : null
               const memberLabel = c.isHouseholdWide ? "Ménage" : c.member ? `${c.member.firstName} ${c.member.lastName ?? ""}`.trim() : "—"
+              const keyDate = getKeyDate(c)
+              const daysLeft = keyDate
+                ? Math.ceil((keyDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+                : null
               return (
                 <Link key={c.id} href={`/contracts/${c.id}`} className="flex items-center gap-4 px-5 py-4 hover:bg-muted/40 transition-colors group">
                   <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
@@ -243,6 +275,13 @@ export function ContractsListClient({
                     {status.label}
                   </Badge>
                   <div className="hidden md:block text-xs text-muted-foreground">{memberLabel}</div>
+                  <div className="hidden lg:block text-right min-w-44">
+                    <p className="text-[10px] text-muted-foreground">{keyDate ? getDateLabel(c) : "Aucune date"}</p>
+                    <p className="text-xs text-foreground/80">{keyDate ? formatDate(keyDate) : "—"}</p>
+                    {daysLeft != null && daysLeft >= 0 && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{formatRelative(daysLeft)}</p>
+                    )}
+                  </div>
                   <div className="text-right">
                     <p className="text-sm font-bold text-foreground">
                       {amount != null ? `CHF ${amount.toLocaleString("fr-CH")}` : "—"}

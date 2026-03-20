@@ -27,19 +27,23 @@ export async function getDashboardData() {
   const features = await getAppFeatures()
   const in30Days = new Date(now)
   in30Days.setDate(in30Days.getDate() + 30)
+  const getAlertDate = (contract: {
+    renewalDate?: Date | null
+    maturityDate?: Date | null
+    endDate?: Date | null
+  }) => contract.renewalDate ?? contract.maturityDate ?? contract.endDate ?? null
   const contractsNearingRenewal = household.contracts.filter((c) => {
-    const renewalSoon = c.renewalDate && c.renewalDate >= now && c.renewalDate <= in30Days
-    const maturitySoon = c.maturityDate && c.maturityDate >= now && c.maturityDate <= in30Days
-    const leaseEndSoon = c.endDate && c.endDate >= now && c.endDate <= in30Days
-    return Boolean(renewalSoon || maturitySoon || leaseEndSoon)
+    const alertDate = getAlertDate(c)
+    return Boolean(alertDate && alertDate >= now && alertDate <= in30Days)
   })
   const contractsWithDerivedDeadline = household.contracts.map((c) => {
     if (c.cancellationDeadline) return c
-    const derived = calculateCancellationDeadline(c.renewalDate, c.cancellationNoticeDays)
+    const alertDate = getAlertDate(c)
+    const derived = calculateCancellationDeadline(alertDate, c.cancellationNoticeDays)
     return { ...c, cancellationDeadline: derived }
   })
   const contractsInCancellationWindow = contractsWithDerivedDeadline.filter(
-    (c) => c.cancellationDeadline && c.cancellationDeadline >= now
+    (c) => c.cancellationDeadline && c.cancellationDeadline >= now && c.cancellationDeadline <= in30Days
   )
   const mortgageAlerts = getMortgageAlerts(contractsWithDerivedDeadline, 180)
 
