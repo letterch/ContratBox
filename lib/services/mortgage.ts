@@ -224,7 +224,6 @@ export function getMortgageAlerts(
       maturityDate: maturity,
       daysLeft,
     })
-    }
   }
 
   return alerts.sort((a, b) => a.daysLeft - b.daysLeft)
