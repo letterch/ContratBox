@@ -37,6 +37,9 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
     exclusions: "",
     importantClauses: "",
     rentalRole: "tenant",
+    minimumCommitmentValue: "",
+    minimumCommitmentUnit: "months",
+    minimumCommitmentEndDate: "",
   })
   const router = useRouter()
 
@@ -48,6 +51,7 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
         const d = await getContractEditData(id)
         if (!mounted) return
         setData(d)
+        const raw = (d.contract.rawExtraction as Record<string, unknown> | null) ?? {}
         setForm({
           provider: d.contract.provider ?? "",
           contractType: d.contract.contractType ?? "",
@@ -67,9 +71,14 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
           exclusions: d.contract.exclusions ?? "",
           importantClauses: d.contract.importantClauses ?? "",
           rentalRole:
-            ((d.contract.rawExtraction as Record<string, unknown> | null)?.rentalRole as string) === "owner"
+            (raw.rentalRole as string) === "owner"
               ? "owner"
               : "tenant",
+          minimumCommitmentValue: raw.minimumCommitmentValue != null ? String(raw.minimumCommitmentValue) : "",
+          minimumCommitmentUnit:
+            raw.minimumCommitmentUnit === "years" ? "years" : "months",
+          minimumCommitmentEndDate:
+            typeof raw.minimumCommitmentEndDate === "string" ? raw.minimumCommitmentEndDate.slice(0, 10) : "",
         })
       } catch (e) {
         setError(e instanceof Error ? e.message : "Erreur de chargement")
@@ -156,9 +165,46 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
             <div><Label className="text-xs text-muted-foreground mb-1 block">Date de début</Label><Input type="date" value={form.startDate} onChange={(e) => setForm((p) => ({ ...p, startDate: e.target.value }))} /></div>
             <div><Label className="text-xs text-muted-foreground mb-1 block">Date de renouvellement</Label><Input type="date" value={form.renewalDate} onChange={(e) => setForm((p) => ({ ...p, renewalDate: e.target.value }))} /></div>
             <div><Label className="text-xs text-muted-foreground mb-1 block">Date de fin</Label><Input type="date" value={form.endDate} onChange={(e) => setForm((p) => ({ ...p, endDate: e.target.value }))} /></div>
-            <div><Label className="text-xs text-muted-foreground mb-1 block">Maturité hypothécaire</Label><Input type="date" value={form.maturityDate} onChange={(e) => setForm((p) => ({ ...p, maturityDate: e.target.value }))} /></div>
+            {form.category === "mortgage" && (
+              <div><Label className="text-xs text-muted-foreground mb-1 block">Maturité hypothécaire</Label><Input type="date" value={form.maturityDate} onChange={(e) => setForm((p) => ({ ...p, maturityDate: e.target.value }))} /></div>
+            )}
             <div><Label className="text-xs text-muted-foreground mb-1 block">Préavis (jours)</Label><Input type="number" value={form.cancellationNoticeDays} onChange={(e) => setForm((p) => ({ ...p, cancellationNoticeDays: e.target.value }))} /></div>
-            <div><Label className="text-xs text-muted-foreground mb-1 block">Taux hypothécaire (%)</Label><Input type="number" step="0.01" value={form.mortgageRate} onChange={(e) => setForm((p) => ({ ...p, mortgageRate: e.target.value }))} /></div>
+            {form.category === "mortgage" && (
+              <div><Label className="text-xs text-muted-foreground mb-1 block">Taux hypothécaire (%)</Label><Input type="number" step="0.01" value={form.mortgageRate} onChange={(e) => setForm((p) => ({ ...p, mortgageRate: e.target.value }))} /></div>
+            )}
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Durée minimale</Label>
+              <Input
+                type="number"
+                placeholder="Ex: 24"
+                value={form.minimumCommitmentValue}
+                onChange={(e) => setForm((p) => ({ ...p, minimumCommitmentValue: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Unité durée minimale</Label>
+              <Select
+                value={form.minimumCommitmentUnit}
+                onValueChange={(value) => setForm((p) => ({ ...p, minimumCommitmentUnit: value }))}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="months">Mois</SelectItem>
+                  <SelectItem value="years">Années</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="sm:col-span-2">
+              <Label className="text-xs text-muted-foreground mb-1 block">Fin d'engagement minimale (optionnel)</Label>
+              <Input
+                type="date"
+                value={form.minimumCommitmentEndDate}
+                onChange={(e) => setForm((p) => ({ ...p, minimumCommitmentEndDate: e.target.value }))}
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Si la date de renouvellement est vide, l'échéance sera déduite de cette durée/date.
+              </p>
+            </div>
             {form.category === "rent_lease" && (
               <div>
                 <Label className="text-xs text-muted-foreground mb-1 block">Rôle locatif</Label>
@@ -218,13 +264,16 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                     startDate: form.startDate || null,
                     renewalDate: form.renewalDate || null,
                     endDate: form.endDate || null,
-                    maturityDate: form.maturityDate || null,
+                    maturityDate: form.category === "mortgage" ? (form.maturityDate || null) : null,
                     cancellationNoticeDays: form.cancellationNoticeDays ? Number(form.cancellationNoticeDays) : null,
-                    mortgageRate: form.mortgageRate ? Number(form.mortgageRate) : null,
+                    mortgageRate: form.category === "mortgage" && form.mortgageRate ? Number(form.mortgageRate) : null,
                     coverageSummary: form.coverageSummary || null,
                     exclusions: form.exclusions || null,
                     importantClauses: form.importantClauses || null,
                     rentalRole: form.category === "rent_lease" ? (form.rentalRole as "owner" | "tenant") : null,
+                    minimumCommitmentValue: form.minimumCommitmentValue ? Number(form.minimumCommitmentValue) : null,
+                    minimumCommitmentUnit: form.minimumCommitmentValue ? (form.minimumCommitmentUnit as "months" | "years") : null,
+                    minimumCommitmentEndDate: form.minimumCommitmentEndDate || null,
                   })
                   router.push(`/contracts/${data.contract.id}`)
                   router.refresh()

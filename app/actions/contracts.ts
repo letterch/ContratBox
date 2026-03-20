@@ -303,6 +303,9 @@ export type UpdateContractInput = {
   exclusions?: string | null
   importantClauses?: string | null
   rentalRole?: "owner" | "tenant" | null
+  minimumCommitmentValue?: number | null
+  minimumCommitmentUnit?: "months" | "years" | null
+  minimumCommitmentEndDate?: string | null
 }
 
 export async function getContractEditData(contractId: string) {
@@ -327,16 +330,29 @@ export async function updateContractManually(input: UpdateContractInput) {
   if (!existing) throw new Error("Contrat introuvable")
 
   const raw = (existing.rawExtraction ?? {}) as Record<string, unknown>
+  const category = input.category ?? existing.category ?? null
+  const isMortgageCategory = category === "mortgage"
   const startDate = input.startDate ? new Date(input.startDate) : null
   const renewalDate = input.renewalDate ? new Date(input.renewalDate) : null
   const endDate = input.endDate ? new Date(input.endDate) : null
-  const maturityDate = input.maturityDate ? new Date(input.maturityDate) : null
+  const maturityDate = isMortgageCategory && input.maturityDate ? new Date(input.maturityDate) : null
+  const mergedRaw: Record<string, unknown> = {
+    ...raw,
+    minimumCommitmentValue:
+      input.minimumCommitmentValue == null ? raw.minimumCommitmentValue ?? null : input.minimumCommitmentValue,
+    minimumCommitmentUnit:
+      input.minimumCommitmentUnit == null ? raw.minimumCommitmentUnit ?? null : input.minimumCommitmentUnit,
+    minimumCommitmentEndDate:
+      input.minimumCommitmentEndDate == null
+        ? raw.minimumCommitmentEndDate ?? null
+        : input.minimumCommitmentEndDate,
+  }
   const keyDate = getKeyDateFromContractLike({
     startDate,
     renewalDate,
     endDate,
     maturityDate,
-    rawExtraction: raw,
+    rawExtraction: mergedRaw,
   })
   const noticeValue = Number(raw.cancellationNoticeValue)
   const noticeUnit = raw.cancellationNoticeUnit as "days" | "months" | "years" | null
@@ -352,7 +368,7 @@ export async function updateContractManually(input: UpdateContractInput) {
     data: {
       provider: input.provider ?? null,
       contractType: input.contractType ?? null,
-      category: input.category ?? null,
+      category,
       policyNumber: input.policyNumber ?? null,
       memberId: input.isHouseholdWide ? null : input.memberId ?? null,
       isHouseholdWide: input.isHouseholdWide ?? false,
@@ -364,18 +380,26 @@ export async function updateContractManually(input: UpdateContractInput) {
       maturityDate,
       cancellationNoticeDays: input.cancellationNoticeDays ?? null,
       autoRenewal: input.autoRenewal ?? null,
-      mortgageRate: input.mortgageRate ?? null,
+      mortgageRate: isMortgageCategory ? (input.mortgageRate ?? null) : null,
       coverageSummary: input.coverageSummary ?? null,
       exclusions: input.exclusions ?? null,
       importantClauses: input.importantClauses ?? null,
       cancellationDeadline,
       rawExtraction: {
-        ...(raw as object),
+        ...(mergedRaw as object),
         startDate: startDate ? startDate.toISOString().slice(0, 10) : null,
         renewalDate: renewalDate ? renewalDate.toISOString().slice(0, 10) : raw.renewalDate ?? null,
         endDate: endDate ? endDate.toISOString().slice(0, 10) : raw.endDate ?? null,
-        maturityDate: maturityDate ? maturityDate.toISOString().slice(0, 10) : raw.maturityDate ?? null,
+        maturityDate: maturityDate ? maturityDate.toISOString().slice(0, 10) : null,
         rentalRole: input.rentalRole ?? raw.rentalRole ?? "tenant",
+        minimumCommitmentValue:
+          input.minimumCommitmentValue == null ? mergedRaw.minimumCommitmentValue ?? null : input.minimumCommitmentValue,
+        minimumCommitmentUnit:
+          input.minimumCommitmentUnit == null ? mergedRaw.minimumCommitmentUnit ?? null : input.minimumCommitmentUnit,
+        minimumCommitmentEndDate:
+          input.minimumCommitmentEndDate == null
+            ? mergedRaw.minimumCommitmentEndDate ?? null
+            : input.minimumCommitmentEndDate,
       } as Parameters<typeof prisma.contract.update>[0]["data"]["rawExtraction"],
       updatedAt: new Date(),
     },
