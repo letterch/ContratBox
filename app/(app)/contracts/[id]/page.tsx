@@ -11,14 +11,9 @@ import { getMortgagePlan } from "@/lib/services/mortgage"
 import { getAppFeatures } from "@/lib/services/feature-flags"
 import { canUseMortgageSimulatorForUser } from "@/lib/services/subscription"
 import { MortgageSimulator } from "@/components/contracts/mortgage-simulator"
+import { getKeyDateFromContractLike, parseUnknownDate } from "@/lib/services/contract-key-date"
 
 const NEXTLETTER_BASE = process.env.NEXTLETTER_BASE_URL ?? "https://nextletter.ch"
-
-function parseRawDate(value: unknown): Date | null {
-  if (!value) return null
-  const d = new Date(String(value))
-  return Number.isNaN(d.getTime()) ? null : d
-}
 
 export default async function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -31,10 +26,10 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const memberLabel = contract.isHouseholdWide ? "Ménage" : contract.member ? `${contract.member.firstName} ${contract.member.lastName ?? ""}`.trim() : "—"
   const premium = contract.premiumAmount != null ? Number(contract.premiumAmount) : null
   const rawExtraction = (contract.rawExtraction ?? {}) as Record<string, unknown>
-  const renewalDate = contract.renewalDate ? new Date(contract.renewalDate) : parseRawDate(rawExtraction.renewalDate)
-  const maturityDate = contract.maturityDate ? new Date(contract.maturityDate) : parseRawDate(rawExtraction.maturityDate)
-  const endDate = contract.endDate ? new Date(contract.endDate) : parseRawDate(rawExtraction.endDate)
-  const keyDate = renewalDate ?? maturityDate ?? endDate
+  const renewalDate = contract.renewalDate ? new Date(contract.renewalDate) : parseUnknownDate(rawExtraction.renewalDate)
+  const maturityDate = contract.maturityDate ? new Date(contract.maturityDate) : parseUnknownDate(rawExtraction.maturityDate)
+  const endDate = contract.endDate ? new Date(contract.endDate) : parseUnknownDate(rawExtraction.endDate)
+  const keyDate = getKeyDateFromContractLike(contract)
   const keyDateLabel = renewalDate ? "Renouvellement" : maturityDate ? "Échéance hypothécaire" : endDate ? "Fin de contrat" : "Échéance"
   const cancelDeadline = contract.cancellationDeadline
     ? new Date(contract.cancellationDeadline)
@@ -116,14 +111,28 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               <p className="text-xs text-muted-foreground">{categoryLabel} · {memberLabel}</p>
             </div>
           </div>
-          {firstDoc && (
+          <div className="flex items-center gap-2">
+            {firstDoc && (
+              <>
+              <Button variant="outline" size="sm" className="rounded-xl gap-2 text-xs" asChild>
+                <Link href={`/api/documents/${firstDoc.id}/download?inline=1`} target="_blank">
+                  Consulter
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="rounded-xl gap-2 text-xs" asChild>
+                <Link href={`/api/documents/${firstDoc.id}/download`}>
+                  <Download className="w-3.5 h-3.5" />
+                  Télécharger
+                </Link>
+              </Button>
+              </>
+            )}
             <Button variant="outline" size="sm" className="rounded-xl gap-2 text-xs" asChild>
-              <Link href={`/api/documents/${firstDoc.id}/download`}>
-                <Download className="w-3.5 h-3.5" />
-                Télécharger
+              <Link href={`/contracts/${contract.id}/edit`}>
+                Modifier
               </Link>
             </Button>
-          )}
+          </div>
         </div>
       </div>
 

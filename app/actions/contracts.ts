@@ -8,6 +8,8 @@ import { extractTextFromFile } from "@/lib/services/ocr"
 import { extractContractData, type ExtractedContractData } from "@/lib/services/extraction"
 import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
 import type { ContractCategorySlug } from "@/lib/constants"
+import { getContractById } from "@/lib/services/contract"
+import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 
 export type UploadAndExtractResult = {
   ok: true
@@ -100,13 +102,26 @@ export async function saveContractFromUpload(data: SaveContractInput) {
   if (!household) throw new Error("Aucun ménage trouvé")
 
   const raw = (data.rawExtraction as Record<string, unknown> | null) ?? null
+  const startDate = data.startDate ? new Date(data.startDate) : null
+  const renewalDate = data.renewalDate ? new Date(data.renewalDate) : null
+  const endDate = data.endDate ? new Date(data.endDate) : null
+  const maturityDate = data.maturityDate ? new Date(data.maturityDate) : null
+  const keyDate =
+    getKeyDateFromContractLike({
+      renewalDate,
+      endDate,
+      maturityDate,
+      startDate,
+      rawExtraction: raw,
+    }) ??
+    null
   const noticeValue = raw && Number(raw.cancellationNoticeValue)
   const noticeUnit = raw?.cancellationNoticeUnit as "days" | "months" | "years" | undefined
   const computedDeadline =
     data.cancellationDeadline
       ? new Date(data.cancellationDeadline)
       : calculateCancellationDeadline(
-          data.renewalDate ? new Date(data.renewalDate) : null,
+          keyDate,
           data.cancellationNoticeDays ?? null,
           Number.isFinite(noticeValue) ? noticeValue : null,
           noticeUnit
@@ -125,10 +140,10 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       isHouseholdWide: data.isHouseholdWide,
       premiumAmount: data.premiumAmount ?? null,
       premiumFrequency: data.premiumFrequency ?? null,
-      startDate: data.startDate ? new Date(data.startDate) : null,
-      renewalDate: data.renewalDate ? new Date(data.renewalDate) : null,
-      endDate: data.endDate ? new Date(data.endDate) : null,
-      maturityDate: data.maturityDate ? new Date(data.maturityDate) : null,
+      startDate,
+      renewalDate,
+      endDate: endDate ?? (keyDate && !renewalDate && !maturityDate ? keyDate : null),
+      maturityDate,
       cancellationNoticeDays:
         data.cancellationNoticeDays ??
         (Number.isFinite(noticeValue)
@@ -251,4 +266,103 @@ export async function getUploadPageData() {
     canAdd: allowed,
     members: household?.members ?? [],
   }
+}
+
+export type UpdateContractInput = {
+  id: string
+  provider?: string | null
+  contractType?: string | null
+  category?: string | null
+  policyNumber?: string | null
+  memberId?: string | null
+  isHouseholdWide?: boolean
+  premiumAmount?: number | null
+  premiumFrequency?: string | null
+  startDate?: string | null
+  renewalDate?: string | null
+  endDate?: string | null
+  maturityDate?: string | null
+  cancellationNoticeDays?: number | null
+  autoRenewal?: boolean | null
+  mortgageRate?: number | null
+  coverageSummary?: string | null
+  exclusions?: string | null
+  importantClauses?: string | null
+}
+
+export async function getContractEditData(contractId: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Non authentifié")
+  const contract = await getContractById(contractId, session.user.id)
+  if (!contract) throw new Error("Contrat introuvable")
+  const household = await prisma.household.findFirst({
+    where: { ownerId: session.user.id },
+    include: { members: true },
+  })
+  return {
+    contract,
+    members: household?.members ?? [],
+  }
+}
+
+export async function updateContractManually(input: UpdateContractInput) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Non authentifié")
+  const existing = await getContractById(input.id, session.user.id)
+  if (!existing) throw new Error("Contrat introuvable")
+
+  const raw = (existing.rawExtraction ?? {}) as Record<string, unknown>
+  const startDate = input.startDate ? new Date(input.startDate) : null
+  const renewalDate = input.renewalDate ? new Date(input.renewalDate) : null
+  const endDate = input.endDate ? new Date(input.endDate) : null
+  const maturityDate = input.maturityDate ? new Date(input.maturityDate) : null
+  const keyDate = getKeyDateFromContractLike({
+    startDate,
+    renewalDate,
+    endDate,
+    maturityDate,
+    rawExtraction: raw,
+  })
+  const noticeValue = Number(raw.cancellationNoticeValue)
+  const noticeUnit = raw.cancellationNoticeUnit as "days" | "months" | "years" | null
+  const cancellationDeadline = calculateCancellationDeadline(
+    keyDate,
+    input.cancellationNoticeDays ?? null,
+    Number.isFinite(noticeValue) ? noticeValue : null,
+    noticeUnit
+  )
+
+  await prisma.contract.update({
+    where: { id: input.id },
+    data: {
+      provider: input.provider ?? null,
+      contractType: input.contractType ?? null,
+      category: input.category ?? null,
+      policyNumber: input.policyNumber ?? null,
+      memberId: input.isHouseholdWide ? null : input.memberId ?? null,
+      isHouseholdWide: input.isHouseholdWide ?? false,
+      premiumAmount: input.premiumAmount ?? null,
+      premiumFrequency: input.premiumFrequency ?? null,
+      startDate,
+      renewalDate,
+      endDate: endDate ?? (keyDate && !renewalDate && !maturityDate ? keyDate : null),
+      maturityDate,
+      cancellationNoticeDays: input.cancellationNoticeDays ?? null,
+      autoRenewal: input.autoRenewal ?? null,
+      mortgageRate: input.mortgageRate ?? null,
+      coverageSummary: input.coverageSummary ?? null,
+      exclusions: input.exclusions ?? null,
+      importantClauses: input.importantClauses ?? null,
+      cancellationDeadline,
+      rawExtraction: {
+        ...(raw as object),
+        startDate: startDate ? startDate.toISOString().slice(0, 10) : null,
+        renewalDate: renewalDate ? renewalDate.toISOString().slice(0, 10) : raw.renewalDate ?? null,
+        endDate: endDate ? endDate.toISOString().slice(0, 10) : raw.endDate ?? null,
+        maturityDate: maturityDate ? maturityDate.toISOString().slice(0, 10) : raw.maturityDate ?? null,
+      } as Parameters<typeof prisma.contract.update>[0]["data"]["rawExtraction"],
+      updatedAt: new Date(),
+    },
+  })
+  return { ok: true }
 }

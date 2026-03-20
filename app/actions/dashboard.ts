@@ -6,12 +6,7 @@ import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
 import { getMortgageAlerts } from "@/lib/services/mortgage"
 import { buildHouseholdCostInsights } from "@/lib/services/household-costs"
 import { getAppFeatures } from "@/lib/services/feature-flags"
-
-function parseRawDate(value: unknown): Date | null {
-  if (!value) return null
-  const d = new Date(String(value))
-  return Number.isNaN(d.getTime()) ? null : d
-}
+import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 
 export async function getDashboardData() {
   const session = await auth()
@@ -37,20 +32,9 @@ export async function getDashboardData() {
     renewalDate?: Date | null
     maturityDate?: Date | null
     endDate?: Date | null
+    startDate?: Date | null
     rawExtraction?: unknown
-  }) => {
-    const raw = (contract.rawExtraction ?? {}) as Record<string, unknown>
-    return (
-      contract.renewalDate ??
-      contract.maturityDate ??
-      contract.endDate ??
-      parseRawDate(raw.renewalDate) ??
-      parseRawDate(raw.maturityDate) ??
-      parseRawDate(raw.endDate) ??
-      parseRawDate(raw.leaseEndDate) ??
-      null
-    )
-  }
+  }) => getKeyDateFromContractLike(contract)
   const contractsNearingRenewal = household.contracts
     .map((c) => {
       const alertDate = getAlertDate(c)

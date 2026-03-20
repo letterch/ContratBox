@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Search, LayoutGrid, List, Filter, FileText, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CONTRACT_CATEGORIES } from "@/lib/constants"
+import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 
 type ContractItem = {
   id: string
@@ -53,21 +54,8 @@ function getStatus(c: ContractItem): keyof typeof statusConfig {
 }
 
 function getKeyDate(c: ContractItem): Date | null {
-  const raw = (c.rawExtraction ?? {}) as Record<string, unknown>
-  const parseRawDate = (value: unknown) => {
-    if (!value) return null
-    const d = new Date(String(value))
-    return Number.isNaN(d.getTime()) ? null : d
-  }
   if (c.cancellationDeadline) return new Date(c.cancellationDeadline)
-  if (c.renewalDate) return new Date(c.renewalDate)
-  if (c.maturityDate) return new Date(c.maturityDate)
-  if (c.endDate) return new Date(c.endDate)
-  if (parseRawDate(raw.renewalDate)) return parseRawDate(raw.renewalDate)
-  if (parseRawDate(raw.maturityDate)) return parseRawDate(raw.maturityDate)
-  if (parseRawDate(raw.endDate)) return parseRawDate(raw.endDate)
-  if (parseRawDate(raw.leaseEndDate)) return parseRawDate(raw.leaseEndDate)
-  return null
+  return getKeyDateFromContractLike(c)
 }
 
 function getDateLabel(c: ContractItem): string {

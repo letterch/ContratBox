@@ -1,13 +1,8 @@
 import Link from "next/link"
-import { SummaryCards } from "@/components/dashboard/summary-cards"
-import { AlertPanel } from "@/components/dashboard/alert-panel"
-import { FamilyTabs } from "@/components/dashboard/family-tabs"
-import { CategoryGrid } from "@/components/dashboard/category-grid"
-import { RecentContracts } from "@/components/dashboard/recent-contracts"
 import { QuickAddButton } from "@/components/dashboard/quick-add-button"
-import { CostInsightsPanel } from "@/components/dashboard/cost-insights"
 import { getDashboardData } from "@/app/actions/dashboard"
 import { Bell, ChevronDown } from "lucide-react"
+import { DashboardContent } from "@/components/dashboard/dashboard-content"
 
 export default async function DashboardPage() {
   const data = await getDashboardData()
@@ -38,25 +33,7 @@ export default async function DashboardPage() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6 pb-32 lg:pb-8">
-        <SummaryCards
-          monthlyTotal={data?.totals?.monthly}
-          annualTotal={data?.totals?.annual}
-          contractCount={data?.household?.contractCount ?? 0}
-          alertCount={data?.contractsInCancellationWindow?.length ?? 0}
-        />
-        <CostInsightsPanel insights={data?.costInsights} />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            <FamilyTabs members={data?.household?.members} contracts={data?.contracts} />
-            <CategoryGrid contracts={data?.contracts} />
-          </div>
-          <AlertPanel
-            cancellationContracts={data?.contractsInCancellationWindow}
-            renewalContracts={data?.contractsNearingRenewal}
-            mortgageAlerts={data?.mortgageAlerts}
-          />
-        </div>
-        <RecentContracts contracts={data?.recentContracts} />
+        <DashboardContent data={data} />
       </div>
 
       <QuickAddButton />

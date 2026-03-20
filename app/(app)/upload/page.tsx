@@ -37,7 +37,11 @@ function ReviewStep({
   const [provider, setProvider] = useState(String(e.provider ?? ""))
   const [category, setCategory] = useState(String(e.suggestedCategory ?? e.category ?? "other"))
   const [memberId, setMemberId] = useState<string>("")
-  const [isHouseholdWide, setIsHouseholdWide] = useState(!e.memberId)
+  const [isHouseholdWide, setIsHouseholdWide] = useState(
+    e.suggestedCategory === "health_basic" || e.suggestedCategory === "health_supplementary"
+      ? false
+      : !e.memberId
+  )
   const [premiumAmount, setPremiumAmount] = useState(String(e.monthlyPremium ?? e.annualPremium ?? ""))
   const [premiumFreq, setPremiumFreq] = useState((e.premiumFrequency as string) ?? "monthly")
   const [startDate, setStartDate] = useState(e.startDate ? String(e.startDate).slice(0, 10) : "")
@@ -158,6 +162,11 @@ function ReviewStep({
               {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName ?? ""}</SelectItem>)}
             </SelectContent>
           </Select>
+          {(category === "health_basic" || category === "health_supplementary") && isHouseholdWide && (
+            <p className="text-[11px] text-[oklch(0.57_0.20_25)] mt-1">
+              Astuce: l'assurance maladie est généralement nominative, assigne ce contrat à un membre.
+            </p>
+          )}
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Montant (CHF)</Label>

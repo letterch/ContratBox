@@ -14,6 +14,15 @@ type ChatBody = {
   activeContractId?: string | null
 }
 
+function detectLanguage(message: string): "fr" | "it" | "en" {
+  const m = message.toLowerCase()
+  const italianHints = ["quando", "assicurazione", "contratto", "scadenza", "disdetta", "copertura", "rata", "ipoteca"]
+  const englishHints = ["when", "insurance", "contract", "deadline", "cancellation", "coverage", "mortgage", "rent"]
+  if (italianHints.some((w) => m.includes(w))) return "it"
+  if (englishHints.some((w) => m.includes(w))) return "en"
+  return "fr"
+}
+
 function buildDefaultSystemPrompt() {
   return `Tu es l'assistant ContratBox, expert des contrats suisses (assurances, télécom, énergie, hypothèques, bail locatif, leasing, abonnements).
 Objectif:
@@ -24,7 +33,8 @@ Objectif:
 - Proposer des pistes d'économies chiffrées quand possible.
 - Si une information manque, le dire explicitement et proposer quoi vérifier.
 - Ne jamais inventer de données non présentes.
-- Structurer les réponses en français, de façon courte et actionnable.`
+- Répondre dans la langue de la question de l'utilisateur: français, italien ou anglais.
+- Structurer les réponses de façon courte et actionnable.`
 }
 
 function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseInsightsEnabled: boolean) {
@@ -35,6 +45,9 @@ function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseI
     const premium = c.premiumAmount ? `Prime: CHF ${String(c.premiumAmount)}/${String(c.premiumFrequency ?? "mois")}` : ""
     const startDate = c.startDate ? `Début: ${new Date(String(c.startDate)).toISOString().slice(0, 10)}` : ""
     const renewalDate = c.renewalDate ? `Renouvellement: ${new Date(String(c.renewalDate)).toISOString().slice(0, 10)}` : ""
+    const endDate = c.endDate ? `Fin: ${new Date(String(c.endDate)).toISOString().slice(0, 10)}` : ""
+    const maturityDate = c.maturityDate ? `Maturité: ${new Date(String(c.maturityDate)).toISOString().slice(0, 10)}` : ""
+    const cancellationDeadline = c.cancellationDeadline ? `Délai de résiliation: ${new Date(String(c.cancellationDeadline)).toISOString().slice(0, 10)}` : ""
     const notice = c.cancellationNoticeDays ? `Préavis: ${String(c.cancellationNoticeDays)} jours` : ""
     const coverage = c.coverageSummary ? `Couverture: ${String(c.coverageSummary)}` : ""
     const exclusions = c.exclusions ? `Exclusions: ${String(c.exclusions)}` : ""
@@ -81,6 +94,9 @@ function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseI
       premium,
       startDate,
       renewalDate,
+      endDate,
+      maturityDate,
+      cancellationDeadline,
       notice,
       coverage,
       exclusions,
@@ -103,6 +119,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as ChatBody
   const features = await getAppFeatures()
   const message = body.message?.trim()
+  const detectedLanguage = detectLanguage(message ?? "")
   if (!message) {
     return NextResponse.json({ error: "Message vide" }, { status: 400 })
   }
@@ -122,7 +139,9 @@ export async function POST(request: Request) {
           premiumFrequency: true,
           startDate: true,
           renewalDate: true,
+          endDate: true,
           cancellationNoticeDays: true,
+          cancellationDeadline: true,
           maturityDate: true,
           mortgageRate: true,
           coverageSummary: true,
@@ -183,6 +202,15 @@ export async function POST(request: Request) {
             content:
               "Contexte contrats utilisateur (source interne ContratBox) :\n" +
               (contractsContext || "Aucun contrat disponible."),
+          },
+          {
+            role: "system",
+            content:
+              detectedLanguage === "it"
+                ? "Rispondi in italiano con chiarezza. Se mancano dati, dichiaralo esplicitamente."
+                : detectedLanguage === "en"
+                  ? "Answer in English clearly. If data is missing, state it explicitly."
+                  : "Réponds en français clairement. Si des données manquent, indique-le explicitement.",
           },
           ...(features.globalSavingsAssistantEnabled
             ? [

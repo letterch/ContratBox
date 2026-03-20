@@ -86,6 +86,17 @@ Ouvrir [http://localhost:3000](http://localhost:3000).
 - **Gratuit** : 3 contrats maximum par ménage.
 - **Payant** : illimité (Stripe à connecter).
 
+## Roadmap produit (gestion locative optionnelle)
+
+ContratBox couvre deja le foyer (contrats, assurances, hypothèques, baux).  
+Extension prevue en option "Gestion locative":
+
+- Portefeuille d'immeubles et d'appartements.
+- Baux locataires par lot (avec loyer hors charges, charges, echeances, preavis).
+- Assignation de contrats/assurances locataires (RC menage, menage, etc.).
+- Vue proprietaire consolidee (cashflow mensuel/annuel, alertes de renouvellement, risques de couverture).
+- Filtres multi-niveaux: foyer, immeuble, lot, locataire.
+
 ## Déploiement (Railway)
 
 1. Créer un projet Railway, ajouter un service PostgreSQL.

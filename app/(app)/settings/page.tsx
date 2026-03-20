@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +12,7 @@ import {
   Plus, Check, ChevronRight, Smartphone, Mail, Home,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { addHouseholdMember, getHouseholdData, removeHouseholdMember } from "@/app/actions/household"
 
 type Tab = "profile" | "notifications" | "security" | "household" | "billing"
 
@@ -21,13 +22,6 @@ const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "security", label: "Sécurité", icon: Shield },
   { id: "household", label: "Ménage", icon: Users },
   { id: "billing", label: "Abonnement", icon: CreditCard },
-]
-
-const members = [
-  { name: "Marc Dupont", email: "marc@dupont.ch", role: "Administrateur", initials: "MD", active: true },
-  { name: "Sophie Dupont", email: "sophie@dupont.ch", role: "Membre", initials: "SD", active: true },
-  { name: "Emma Dupont", email: "emma@dupont.ch", role: "Membre", initials: "ED", active: false },
-  { name: "Théo Dupont", email: "theo@dupont.ch", role: "Membre", initials: "TD", active: false },
 ]
 
 const notifSettings = [
@@ -55,6 +49,25 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("profile")
   const [notifications, setNotifications] = useState(notifSettings)
   const [saved, setSaved] = useState(false)
+  const [householdName, setHouseholdName] = useState("Mon ménage")
+  const [members, setMembers] = useState<Array<{
+    id: string
+    firstName: string
+    lastName?: string | null
+    role: string
+    contractCount: number
+  }>>([])
+  const [newFirstName, setNewFirstName] = useState("")
+  const [newLastName, setNewLastName] = useState("")
+  const [memberBusy, setMemberBusy] = useState(false)
+  const [memberError, setMemberError] = useState("")
+
+  useEffect(() => {
+    getHouseholdData().then((res) => {
+      if (res.household?.name) setHouseholdName(res.household.name)
+      setMembers(res.members)
+    })
+  }, [])
 
   const toggleNotif = (id: string, type: "email" | "push") => {
     setNotifications((prev) =>
@@ -275,44 +288,83 @@ export default function SettingsPage() {
 
           {activeTab === "household" && (
             <>
-              <SectionCard title="Ménage Dupont" description="Gérez les membres de votre foyer">
+              <SectionCard title={householdName} description="Gérez les membres de votre foyer">
                 <div className="flex flex-col gap-2 mb-4">
                   {members.map((m) => (
-                    <div key={m.email} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/40 transition-colors">
+                    <div key={m.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-muted/40 transition-colors">
                       <div className="w-9 h-9 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-semibold text-primary">{m.initials}</span>
+                        <span className="text-xs font-semibold text-primary">{`${m.firstName[0] ?? ""}${m.lastName?.[0] ?? ""}`.toUpperCase()}</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{m.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{`${m.firstName} ${m.lastName ?? ""}`.trim()}</p>
+                        <p className="text-xs text-muted-foreground truncate">{m.contractCount} contrat{m.contractCount > 1 ? "s" : ""} assigné{m.contractCount > 1 ? "s" : ""}</p>
                       </div>
                       <Badge className={cn(
                         "text-[10px] border-0 flex-shrink-0",
-                        m.role === "Administrateur"
+                        m.role === "adult"
                           ? "bg-primary/10 text-primary"
                           : "bg-muted text-muted-foreground"
                       )}>
-                        {m.role}
+                        {m.role === "adult" ? "Adulte" : m.role === "child" ? "Enfant" : "Membre"}
                       </Badge>
-                      {m.role !== "Administrateur" && (
-                        <button className="text-muted-foreground hover:text-destructive transition-colors">
+                      <button
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        disabled={memberBusy}
+                        onClick={async () => {
+                          try {
+                            setMemberBusy(true)
+                            setMemberError("")
+                            await removeHouseholdMember(m.id)
+                            const refreshed = await getHouseholdData()
+                            setMembers(refreshed.members)
+                          } catch (e) {
+                            setMemberError(e instanceof Error ? e.message : "Suppression impossible")
+                          } finally {
+                            setMemberBusy(false)
+                          }
+                        }}
+                      >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      </button>
                     </div>
                   ))}
                 </div>
-                <Button variant="outline" size="sm" className="rounded-xl text-sm gap-2 w-full justify-center border-dashed h-10">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                  <Input placeholder="Prénom" value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} />
+                  <Input placeholder="Nom (optionnel)" value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl text-sm gap-2 w-full justify-center border-dashed h-10"
+                    disabled={memberBusy}
+                    onClick={async () => {
+                      try {
+                        setMemberBusy(true)
+                        setMemberError("")
+                        await addHouseholdMember({ firstName: newFirstName, lastName: newLastName, role: "adult" })
+                        setNewFirstName("")
+                        setNewLastName("")
+                        const refreshed = await getHouseholdData()
+                        setMembers(refreshed.members)
+                      } catch (e) {
+                        setMemberError(e instanceof Error ? e.message : "Ajout impossible")
+                      } finally {
+                        setMemberBusy(false)
+                      }
+                    }}
+                  >
                   <Plus className="w-4 h-4" />
-                  Inviter un membre
-                </Button>
+                  Ajouter un membre
+                  </Button>
+                </div>
+                {memberError && <p className="text-xs text-destructive">{memberError}</p>}
               </SectionCard>
 
               <SectionCard title="Informations du ménage">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
                     <Label className="text-xs text-muted-foreground mb-1.5 block">Nom du ménage</Label>
-                    <Input defaultValue="Ménage Dupont" className="rounded-xl h-10" />
+                    <Input value={householdName} onChange={(e) => setHouseholdName(e.target.value)} className="rounded-xl h-10" />
                   </div>
                   <div className="sm:col-span-2">
                     <Label className="text-xs text-muted-foreground mb-1.5 block">Adresse principale</Label>

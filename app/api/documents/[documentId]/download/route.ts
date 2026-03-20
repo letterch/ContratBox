@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db"
 import { getDocumentStream } from "@/lib/services/storage"
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ documentId: string }> }
 ) {
   const session = await auth()
@@ -21,9 +21,13 @@ export async function GET(
   try {
     const stream = await getDocumentStream(doc.r2Key)
     if (!stream) return new Response("Fichier introuvable", { status: 404 })
+    const isInline = new URL(req.url).searchParams.get("inline") === "1"
     const headers = new Headers()
     headers.set("Content-Type", doc.mimeType)
-    headers.set("Content-Disposition", `attachment; filename="${encodeURIComponent(doc.name)}"`)
+    headers.set(
+      "Content-Disposition",
+      `${isInline ? "inline" : "attachment"}; filename="${encodeURIComponent(doc.name)}"`
+    )
     return new Response(stream as unknown as ReadableStream, { headers })
   } catch {
     return new Response("Erreur de lecture", { status: 500 })

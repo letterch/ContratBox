@@ -30,11 +30,16 @@ const defaultMembers = [
 export function FamilyTabs({
   members: rawMembers = [],
   contracts = [],
+  activeId,
+  onChange,
 }: {
   members?: Member[]
   contracts?: Contract[]
+  activeId?: string
+  onChange?: (id: string) => void
 }) {
-  const [active, setActive] = useState("all")
+  const [internalActive, setInternalActive] = useState("all")
+  const active = activeId ?? internalActive
   const members = useMemo(() => {
     if (rawMembers.length === 0) return defaultMembers
     const allCost = contracts.reduce((sum, c) => sum + getMonthlyCost(c), 0)
@@ -66,7 +71,10 @@ export function FamilyTabs({
         {members.map((m) => (
           <button
             key={m.id}
-            onClick={() => setActive(m.id)}
+            onClick={() => {
+              if (onChange) onChange(m.id)
+              else setInternalActive(m.id)
+            }}
             className={cn(
               "flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border transition-all text-left",
               active === m.id
