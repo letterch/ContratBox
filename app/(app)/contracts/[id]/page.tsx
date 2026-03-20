@@ -14,6 +14,12 @@ import { MortgageSimulator } from "@/components/contracts/mortgage-simulator"
 
 const NEXTLETTER_BASE = process.env.NEXTLETTER_BASE_URL ?? "https://nextletter.ch"
 
+function parseRawDate(value: unknown): Date | null {
+  if (!value) return null
+  const d = new Date(String(value))
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 export default async function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
   if (!session?.user?.id) notFound()
@@ -24,12 +30,16 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const categoryLabel = contract.category ? CONTRACT_CATEGORIES[contract.category as keyof typeof CONTRACT_CATEGORIES] ?? contract.category : "—"
   const memberLabel = contract.isHouseholdWide ? "Ménage" : contract.member ? `${contract.member.firstName} ${contract.member.lastName ?? ""}`.trim() : "—"
   const premium = contract.premiumAmount != null ? Number(contract.premiumAmount) : null
-  const renewalDate = contract.renewalDate ? new Date(contract.renewalDate) : null
   const rawExtraction = (contract.rawExtraction ?? {}) as Record<string, unknown>
+  const renewalDate = contract.renewalDate ? new Date(contract.renewalDate) : parseRawDate(rawExtraction.renewalDate)
+  const maturityDate = contract.maturityDate ? new Date(contract.maturityDate) : parseRawDate(rawExtraction.maturityDate)
+  const endDate = contract.endDate ? new Date(contract.endDate) : parseRawDate(rawExtraction.endDate)
+  const keyDate = renewalDate ?? maturityDate ?? endDate
+  const keyDateLabel = renewalDate ? "Renouvellement" : maturityDate ? "Échéance hypothécaire" : endDate ? "Fin de contrat" : "Échéance"
   const cancelDeadline = contract.cancellationDeadline
     ? new Date(contract.cancellationDeadline)
     : calculateCancellationDeadline(
-        renewalDate,
+        keyDate,
         contract.cancellationNoticeDays ?? null,
         Number(rawExtraction.cancellationNoticeValue),
         rawExtraction.cancellationNoticeUnit as "days" | "months" | "years" | null
@@ -145,8 +155,8 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 <p className="text-white font-bold text-lg">{premium != null ? `CHF ${premium.toLocaleString("fr-CH")}` : "—"}/{contract.premiumFrequency === "annual" ? "an" : "mois"}</p>
               </div>
               <div>
-                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Renouvellement</p>
-                <p className="text-white font-bold text-lg">{renewalDate ? renewalDate.toLocaleDateString("fr-CH") : "—"}</p>
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">{keyDateLabel}</p>
+                <p className="text-white font-bold text-lg">{keyDate ? keyDate.toLocaleDateString("fr-CH") : "—"}</p>
               </div>
               <div>
                 <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Préavis</p>
@@ -228,16 +238,28 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                     <span className="font-medium">{new Date(contract.startDate).toLocaleDateString("fr-CH")}</span>
                   </div>
                 )}
-                {contract.renewalDate && (
+                {renewalDate && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Renouvellement</span>
-                    <span className="font-medium">{new Date(contract.renewalDate).toLocaleDateString("fr-CH")}</span>
+                    <span className="font-medium">{renewalDate.toLocaleDateString("fr-CH")}</span>
                   </div>
                 )}
-                {contract.cancellationDeadline && (
+                {maturityDate && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Échéance hypothécaire</span>
+                    <span className="font-medium">{maturityDate.toLocaleDateString("fr-CH")}</span>
+                  </div>
+                )}
+                {endDate && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Fin de contrat</span>
+                    <span className="font-medium">{endDate.toLocaleDateString("fr-CH")}</span>
+                  </div>
+                )}
+                {cancelDeadline && (
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Dernier délai résiliation</span>
-                    <span className="font-medium">{new Date(contract.cancellationDeadline).toLocaleDateString("fr-CH")}</span>
+                    <span className="font-medium">{cancelDeadline.toLocaleDateString("fr-CH")}</span>
                   </div>
                 )}
               </div>

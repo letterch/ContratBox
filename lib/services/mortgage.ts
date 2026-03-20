@@ -192,19 +192,38 @@ export function getMortgageAlerts(
   for (const contract of contracts) {
     if (contract.category !== "mortgage") continue
     const plan = getMortgagePlan(contract)
-    if (!plan.isMortgage) continue
-    for (const tranche of plan.tranches) {
-      if (!tranche.endDate || tranche.daysToMaturity == null) continue
-      if (tranche.daysToMaturity < 0 || tranche.daysToMaturity > windowDays) continue
-      alerts.push({
-        id: `${contract.id}-${tranche.name}-${tranche.endDate.toISOString()}`,
-        contractId: contract.id,
-        provider: contract.provider ?? "Hypothèque",
-        trancheName: tranche.name,
-        annualRate: tranche.annualRate,
-        maturityDate: tranche.endDate,
-        daysLeft: tranche.daysToMaturity,
-      })
+    if (plan.isMortgage) {
+      for (const tranche of plan.tranches) {
+        if (!tranche.endDate || tranche.daysToMaturity == null) continue
+        if (tranche.daysToMaturity < 0 || tranche.daysToMaturity > windowDays) continue
+        alerts.push({
+          id: `${contract.id}-${tranche.name}-${tranche.endDate.toISOString()}`,
+          contractId: contract.id,
+          provider: contract.provider ?? "Hypothèque",
+          trancheName: tranche.name,
+          annualRate: tranche.annualRate,
+          maturityDate: tranche.endDate,
+          daysLeft: tranche.daysToMaturity,
+        })
+      }
+      continue
+    }
+
+    // Fallback: contrats hypothécaires sans tranches/champs financiers,
+    // mais avec une date d'échéance renseignée.
+    const maturity = asDate(contract.maturityDate)
+    if (!maturity) continue
+    const daysLeft = Math.ceil((maturity.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+    if (daysLeft < 0 || daysLeft > windowDays) continue
+    alerts.push({
+      id: `${contract.id}-maturity-${maturity.toISOString()}`,
+      contractId: contract.id,
+      provider: contract.provider ?? "Hypothèque",
+      trancheName: "Échéance principale",
+      annualRate: asNumber(contract.mortgageRate) ?? 0,
+      maturityDate: maturity,
+      daysLeft,
+    })
     }
   }
 

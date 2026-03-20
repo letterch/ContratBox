@@ -7,6 +7,12 @@ import { getMortgageAlerts } from "@/lib/services/mortgage"
 import { buildHouseholdCostInsights } from "@/lib/services/household-costs"
 import { getAppFeatures } from "@/lib/services/feature-flags"
 
+function parseRawDate(value: unknown): Date | null {
+  if (!value) return null
+  const d = new Date(String(value))
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 export async function getDashboardData() {
   const session = await auth()
   if (!session?.user?.id) return null
@@ -31,15 +37,44 @@ export async function getDashboardData() {
     renewalDate?: Date | null
     maturityDate?: Date | null
     endDate?: Date | null
-  }) => contract.renewalDate ?? contract.maturityDate ?? contract.endDate ?? null
-  const contractsNearingRenewal = household.contracts.filter((c) => {
-    const alertDate = getAlertDate(c)
-    return Boolean(alertDate && alertDate >= now && alertDate <= in30Days)
-  })
+    rawExtraction?: unknown
+  }) => {
+    const raw = (contract.rawExtraction ?? {}) as Record<string, unknown>
+    return (
+      contract.renewalDate ??
+      contract.maturityDate ??
+      contract.endDate ??
+      parseRawDate(raw.renewalDate) ??
+      parseRawDate(raw.maturityDate) ??
+      parseRawDate(raw.endDate) ??
+      parseRawDate(raw.leaseEndDate) ??
+      null
+    )
+  }
+  const contractsNearingRenewal = household.contracts
+    .map((c) => {
+      const alertDate = getAlertDate(c)
+      return { contract: c, alertDate }
+    })
+    .filter(({ alertDate }) => Boolean(alertDate && alertDate >= now && alertDate <= in30Days))
+    .map(({ contract, alertDate }) => ({
+      ...contract,
+      renewalDate: contract.renewalDate ?? alertDate ?? null,
+      maturityDate: contract.maturityDate ?? null,
+      endDate: contract.endDate ?? null,
+    }))
   const contractsWithDerivedDeadline = household.contracts.map((c) => {
     if (c.cancellationDeadline) return c
     const alertDate = getAlertDate(c)
-    const derived = calculateCancellationDeadline(alertDate, c.cancellationNoticeDays)
+    const raw = (c.rawExtraction ?? {}) as Record<string, unknown>
+    const rawNoticeValue = Number(raw.cancellationNoticeValue)
+    const rawNoticeUnit = raw.cancellationNoticeUnit as "days" | "months" | "years" | null
+    const derived = calculateCancellationDeadline(
+      alertDate,
+      c.cancellationNoticeDays,
+      Number.isFinite(rawNoticeValue) ? rawNoticeValue : null,
+      rawNoticeUnit
+    )
     return { ...c, cancellationDeadline: derived }
   })
   const contractsInCancellationWindow = contractsWithDerivedDeadline.filter(
