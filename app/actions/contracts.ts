@@ -268,6 +268,20 @@ export async function getUploadPageData() {
   }
 }
 
+export async function deleteContractById(contractId: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Non authentifié")
+  const contract = await prisma.contract.findFirst({
+    where: { id: contractId },
+    include: { household: true },
+  })
+  if (!contract || contract.household.ownerId !== session.user.id) {
+    throw new Error("Contrat introuvable")
+  }
+  await prisma.contract.delete({ where: { id: contractId } })
+  return { ok: true }
+}
+
 export type UpdateContractInput = {
   id: string
   provider?: string | null
@@ -288,6 +302,7 @@ export type UpdateContractInput = {
   coverageSummary?: string | null
   exclusions?: string | null
   importantClauses?: string | null
+  rentalRole?: "owner" | "tenant" | null
 }
 
 export async function getContractEditData(contractId: string) {
@@ -360,6 +375,7 @@ export async function updateContractManually(input: UpdateContractInput) {
         renewalDate: renewalDate ? renewalDate.toISOString().slice(0, 10) : raw.renewalDate ?? null,
         endDate: endDate ? endDate.toISOString().slice(0, 10) : raw.endDate ?? null,
         maturityDate: maturityDate ? maturityDate.toISOString().slice(0, 10) : raw.maturityDate ?? null,
+        rentalRole: input.rentalRole ?? raw.rentalRole ?? "tenant",
       } as Parameters<typeof prisma.contract.update>[0]["data"]["rawExtraction"],
       updatedAt: new Date(),
     },

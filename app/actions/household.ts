@@ -32,6 +32,8 @@ export async function addHouseholdMember(input: {
   firstName: string
   lastName?: string | null
   role?: string | null
+  dateOfBirth?: string | null
+  notes?: string | null
 }) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Non authentifié")
@@ -47,6 +49,8 @@ export async function addHouseholdMember(input: {
       firstName,
       lastName: input.lastName?.trim() || null,
       role: input.role?.trim() || "adult",
+      dateOfBirth: input.dateOfBirth ? new Date(input.dateOfBirth) : null,
+      notes: input.notes?.trim() || null,
     },
   })
   return member

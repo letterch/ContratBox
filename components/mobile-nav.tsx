@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, FileText, Upload, MessageSquare, Settings } from "lucide-react"
+import { LayoutDashboard, FileText, Upload, MessageSquare, Settings, Building2 } from "lucide-react"
 
 const items = [
   { href: "/dashboard", label: "Accueil", icon: LayoutDashboard },
@@ -11,6 +11,7 @@ const items = [
   { href: "/upload", label: "Ajouter", icon: Upload },
   { href: "/ai", label: "IA", icon: MessageSquare },
   { href: "/settings", label: "Réglages", icon: Settings },
+  { href: "/real-estate", label: "Immo", icon: Building2 },
 ]
 
 export function MobileNav() {

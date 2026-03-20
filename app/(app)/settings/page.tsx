@@ -55,10 +55,15 @@ export default function SettingsPage() {
     firstName: string
     lastName?: string | null
     role: string
+    dateOfBirth?: string | Date | null
+    notes?: string | null
     contractCount: number
   }>>([])
   const [newFirstName, setNewFirstName] = useState("")
   const [newLastName, setNewLastName] = useState("")
+  const [newRole, setNewRole] = useState("adult")
+  const [newDob, setNewDob] = useState("")
+  const [newNotes, setNewNotes] = useState("")
   const [memberBusy, setMemberBusy] = useState(false)
   const [memberError, setMemberError] = useState("")
 
@@ -297,7 +302,11 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground truncate">{`${m.firstName} ${m.lastName ?? ""}`.trim()}</p>
-                        <p className="text-xs text-muted-foreground truncate">{m.contractCount} contrat{m.contractCount > 1 ? "s" : ""} assigné{m.contractCount > 1 ? "s" : ""}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {m.contractCount} contrat{m.contractCount > 1 ? "s" : ""} assigné{m.contractCount > 1 ? "s" : ""}
+                          {m.dateOfBirth ? ` · Né(e) le ${new Date(m.dateOfBirth).toLocaleDateString("fr-CH")}` : ""}
+                        </p>
+                        {m.notes && <p className="text-[11px] text-muted-foreground truncate">{m.notes}</p>}
                       </div>
                       <Badge className={cn(
                         "text-[10px] border-0 flex-shrink-0",
@@ -305,7 +314,7 @@ export default function SettingsPage() {
                           ? "bg-primary/10 text-primary"
                           : "bg-muted text-muted-foreground"
                       )}>
-                        {m.role === "adult" ? "Adulte" : m.role === "child" ? "Enfant" : "Membre"}
+                        {m.role === "adult" ? "Adulte" : m.role === "child" ? "Enfant" : m.role === "pet" ? "Animal" : "Membre"}
                       </Badge>
                       <button
                         className="text-muted-foreground hover:text-destructive transition-colors"
@@ -329,9 +338,19 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 mb-2">
                   <Input placeholder="Prénom" value={newFirstName} onChange={(e) => setNewFirstName(e.target.value)} />
                   <Input placeholder="Nom (optionnel)" value={newLastName} onChange={(e) => setNewLastName(e.target.value)} />
+                  <Select value={newRole} onValueChange={setNewRole}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="adult">Adulte</SelectItem>
+                      <SelectItem value="child">Enfant</SelectItem>
+                      <SelectItem value="pet">Animal</SelectItem>
+                      <SelectItem value="other">Autre</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input type="date" value={newDob} onChange={(e) => setNewDob(e.target.value)} />
                   <Button
                     variant="outline"
                     size="sm"
@@ -341,9 +360,18 @@ export default function SettingsPage() {
                       try {
                         setMemberBusy(true)
                         setMemberError("")
-                        await addHouseholdMember({ firstName: newFirstName, lastName: newLastName, role: "adult" })
+                        await addHouseholdMember({
+                          firstName: newFirstName,
+                          lastName: newLastName,
+                          role: newRole,
+                          dateOfBirth: newDob || null,
+                          notes: newNotes || null,
+                        })
                         setNewFirstName("")
                         setNewLastName("")
+                        setNewRole("adult")
+                        setNewDob("")
+                        setNewNotes("")
                         const refreshed = await getHouseholdData()
                         setMembers(refreshed.members)
                       } catch (e) {
@@ -357,6 +385,12 @@ export default function SettingsPage() {
                   Ajouter un membre
                   </Button>
                 </div>
+                <Input
+                  placeholder="Note (optionnelle, ex: Chien labrador)"
+                  value={newNotes}
+                  onChange={(e) => setNewNotes(e.target.value)}
+                  className="mb-2"
+                />
                 {memberError && <p className="text-xs text-destructive">{memberError}</p>}
               </SectionCard>
 

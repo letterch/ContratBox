@@ -67,6 +67,7 @@ function ReviewStep({
   const [leaseEndDate, setLeaseEndDate] = useState(
     e.leaseEndDate ? String(e.leaseEndDate).slice(0, 10) : ""
   )
+  const [leaseRole, setLeaseRole] = useState("tenant")
 
   const handleSubmit = (ev: React.FormEvent) => {
     ev.preventDefault()
@@ -79,6 +80,7 @@ function ReviewStep({
       leaseMonthlyCharges: leaseMonthlyCharges ? parseFloat(leaseMonthlyCharges) : null,
       leaseTacitRenewal: leaseTacitRenewal === "yes" ? true : leaseTacitRenewal === "no" ? false : null,
       leaseEndDate: leaseEndDate || null,
+      rentalRole: leaseRole,
     }
     const inferredMonthly = leaseMonthlyRent || leaseMonthlyCharges
       ? (parseFloat(leaseMonthlyRent || "0") + parseFloat(leaseMonthlyCharges || "0"))
@@ -223,6 +225,16 @@ function ReviewStep({
         )}
         {isLease && (
           <>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Rôle locatif</Label>
+              <Select value={leaseRole} onValueChange={setLeaseRole}>
+                <SelectTrigger className="rounded-xl h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="tenant">Locataire (charge)</SelectItem>
+                  <SelectItem value="owner">Propriétaire (revenu)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1 block">Loyer mensuel hors charges (CHF)</Label>
               <Input type="number" step="0.01" value={leaseMonthlyRent} onChange={(e) => setLeaseMonthlyRent(e.target.value)} className="rounded-xl h-9 text-sm" />

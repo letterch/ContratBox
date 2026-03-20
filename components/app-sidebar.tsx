@@ -15,6 +15,7 @@ import {
   LogOut,
   Home,
   ShieldCheck,
+  Building2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Session } from "next-auth"
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/upload", label: "Ajouter un contrat", icon: Upload },
   { href: "/ai", label: "Assistant IA", icon: MessageSquare },
   { href: "/settings", label: "Paramètres", icon: Settings },
+  { href: "/real-estate", label: "Gestion immobilière", icon: Building2 },
   { href: "/admin", label: "Administration", icon: ShieldCheck },
 ]
 

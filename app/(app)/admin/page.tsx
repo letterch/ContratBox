@@ -3,36 +3,19 @@
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
-  Users, FileText, TrendingUp, AlertTriangle, Search, ChevronDown,
-  ArrowUpRight, Shield, Zap, MoreHorizontal, Download, RefreshCw,
+  Users, FileText, TrendingUp, AlertTriangle,
+  ArrowUpRight, Zap, Download, RefreshCw,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FeatureFlagsCard } from "@/components/admin/feature-flags-card"
 import { ProUsersManager } from "@/components/admin/pro-users-manager"
 
 const kpis = [
-  { label: "Utilisateurs actifs", value: "4 821", delta: "+12%", icon: Users, color: "text-primary", bg: "bg-primary/8" },
-  { label: "Contrats gérés", value: "38 940", delta: "+8%", icon: FileText, color: "text-[oklch(0.56_0.15_162)]", bg: "bg-[oklch(0.56_0.15_162)]/8" },
-  { label: "Revenu mensuel", value: "CHF 47 720", delta: "+15%", icon: TrendingUp, color: "text-[oklch(0.58_0.18_220)]", bg: "bg-[oklch(0.58_0.18_220)]/8" },
-  { label: "Tickets ouverts", value: "23", delta: "-5%", icon: AlertTriangle, color: "text-warning", bg: "bg-warning/8" },
-]
-
-const recentUsers = [
-  { name: "Marc Dupont", email: "marc@dupont.ch", plan: "Premium", contracts: 12, joined: "03 mars 2026", status: "Actif" },
-  { name: "Sophie Laurent", email: "sophie.l@gmail.com", plan: "Free", contracts: 3, joined: "02 mars 2026", status: "Actif" },
-  { name: "Jean-Pierre Müller", email: "jp.muller@bluewin.ch", plan: "Premium", contracts: 8, joined: "01 mars 2026", status: "Suspendu" },
-  { name: "Isabelle Rochat", email: "i.rochat@me.com", plan: "Premium", contracts: 15, joined: "28 fév. 2026", status: "Actif" },
-  { name: "Kevin Andrade", email: "k.andrade@swisscom.ch", plan: "Free", contracts: 2, joined: "27 fév. 2026", status: "Actif" },
-  { name: "Nathalie Favre", email: "n.favre@outlook.com", plan: "Premium", contracts: 9, joined: "25 fév. 2026", status: "Actif" },
-]
-
-const recentContracts = [
-  { user: "Marc Dupont", provider: "Swisscom SA", category: "Télécom", amount: "CHF 89/mois", confidence: 97, date: "Aujourd'hui" },
-  { user: "Sophie Laurent", provider: "AXA Assurances", category: "Assurances", amount: "CHF 124/mois", confidence: 94, date: "Aujourd'hui" },
-  { user: "Isabelle Rochat", provider: "UBS Hypothèque", category: "Immobilier", amount: "CHF 1'450/mois", confidence: 99, date: "Hier" },
-  { user: "Kevin Andrade", provider: "Migros Cumulus", category: "Abonnements", amount: "CHF 15/mois", confidence: 88, date: "Hier" },
+  { label: "Utilisateurs", value: "Pilotage live", delta: "", icon: Users, color: "text-primary", bg: "bg-primary/8" },
+  { label: "Contrats", value: "Vision globale", delta: "", icon: FileText, color: "text-[oklch(0.56_0.15_162)]", bg: "bg-[oklch(0.56_0.15_162)]/8" },
+  { label: "Abonnements", value: "Actifs / Pro", delta: "", icon: TrendingUp, color: "text-[oklch(0.58_0.18_220)]", bg: "bg-[oklch(0.58_0.18_220)]/8" },
+  { label: "Options", value: "Locataire/Propriétaire", delta: "", icon: AlertTriangle, color: "text-warning", bg: "bg-warning/8" },
 ]
 
 const alerts = [
@@ -52,13 +35,6 @@ const adminTabs: { id: AdminTab; label: string }[] = [
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("overview")
-  const [search, setSearch] = useState("")
-
-  const filteredUsers = recentUsers.filter(
-    (u) =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase())
-  )
 
   return (
     <div className="min-h-screen bg-background pb-32 lg:pb-8">
@@ -130,136 +106,15 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {(activeTab === "overview" || activeTab === "users") && (
-          <div className="bg-card rounded-2xl border border-border shadow-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-semibold text-foreground text-sm">
-                {activeTab === "overview" ? "Derniers inscrits" : "Tous les utilisateurs"}
-              </h2>
-              <div className="flex items-center gap-2">
-                <div className="relative hidden sm:block">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Rechercher..."
-                    className="pl-8 h-8 text-xs rounded-xl w-44 bg-muted border-0"
-                  />
-                </div>
-                <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1 h-8">
-                  Filtrer <ChevronDown className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-5 py-3">Utilisateur</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden md:table-cell">Plan</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden lg:table-cell">Contrats</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden lg:table-cell">Inscription</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Statut</th>
-                    <th className="px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredUsers.map((user) => (
-                    <tr key={user.email} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-                            <span className="text-[10px] font-bold text-primary">
-                              {user.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground text-sm leading-tight">{user.name}</p>
-                            <p className="text-xs text-muted-foreground">{user.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 hidden md:table-cell">
-                        <Badge className={cn(
-                          "text-[10px] border-0",
-                          user.plan === "Premium"
-                            ? "bg-primary/10 text-primary"
-                            : "bg-muted text-muted-foreground"
-                        )}>
-                          {user.plan}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3.5 text-sm text-foreground hidden lg:table-cell">{user.contracts}</td>
-                      <td className="px-4 py-3.5 text-xs text-muted-foreground hidden lg:table-cell">{user.joined}</td>
-                      <td className="px-4 py-3.5">
-                        <Badge className={cn(
-                          "text-[10px] border-0",
-                          user.status === "Actif"
-                            ? "bg-[oklch(0.56_0.15_162)]/10 text-[oklch(0.56_0.15_162)]"
-                            : "bg-destructive/10 text-destructive"
-                        )}>
-                          {user.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3.5">
-                        <button className="p-1 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {(activeTab === "overview" || activeTab === "users") && <ProUsersManager />}
 
         {(activeTab === "overview" || activeTab === "contracts") && (
-          <div className="bg-card rounded-2xl border border-border shadow-card overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-semibold text-foreground text-sm">Contrats récemment ajoutés</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-5 py-3">Utilisateur</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Prestataire</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden md:table-cell">Catégorie</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden lg:table-cell">Montant</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3 hidden lg:table-cell">Confiance IA</th>
-                    <th className="text-left text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-4 py-3">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {recentContracts.map((c, i) => (
-                    <tr key={i} className="hover:bg-muted/20 transition-colors">
-                      <td className="px-5 py-3.5 text-sm font-medium text-foreground">{c.user}</td>
-                      <td className="px-4 py-3.5 text-sm text-foreground">{c.provider}</td>
-                      <td className="px-4 py-3.5 hidden md:table-cell">
-                        <Badge className="text-[10px] bg-muted text-muted-foreground border-0">{c.category}</Badge>
-                      </td>
-                      <td className="px-4 py-3.5 text-sm text-foreground hidden lg:table-cell">{c.amount}</td>
-                      <td className="px-4 py-3.5 hidden lg:table-cell">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={cn(
-                                "h-full rounded-full",
-                                c.confidence >= 95 ? "bg-[oklch(0.56_0.15_162)]" : c.confidence >= 88 ? "bg-[oklch(0.70_0.15_60)]" : "bg-warning"
-                              )}
-                              style={{ width: `${c.confidence}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground">{c.confidence}%</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 text-xs text-muted-foreground">{c.date}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="bg-card rounded-2xl border border-border shadow-card p-5">
+            <h2 className="font-semibold text-foreground text-sm mb-2">Pilotage contrats</h2>
+            <p className="text-xs text-muted-foreground">
+              Le pilotage détaillé est disponible via la gestion utilisateurs (statut Pro, options locataire/propriétaire, admin)
+              et les feature flags ci-dessous.
+            </p>
           </div>
         )}
 

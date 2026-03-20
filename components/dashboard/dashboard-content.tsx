@@ -26,6 +26,7 @@ type DashboardPayload = {
   contractsInCancellationWindow?: Array<{ id: string }>
   contractsNearingRenewal?: Array<{ id: string }>
   mortgageAlerts?: Array<{ id: string; contractId: string }>
+  realEstate?: { monthlyIncome: number; monthlyCharges: number; netMonthly: number }
 }
 
 export function DashboardContent({ data }: { data: DashboardPayload | null }) {
@@ -84,6 +85,25 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
         alertCount={cancellationContracts.length}
       />
       <CostInsightsPanel insights={data?.costInsights as Parameters<typeof CostInsightsPanel>[0]["insights"]} />
+      {!!data?.realEstate && (data.realEstate.monthlyIncome > 0 || data.realEstate.monthlyCharges > 0) && (
+        <div className="bg-card rounded-2xl border border-border shadow-card p-5">
+          <h3 className="text-sm font-semibold text-foreground mb-3">Vue immobilière</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Revenus loyers</p>
+              <p className="text-base font-semibold text-[oklch(0.56_0.15_162)]">CHF {data.realEstate.monthlyIncome.toLocaleString("fr-CH")}/mois</p>
+            </div>
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Charges immo</p>
+              <p className="text-base font-semibold text-[oklch(0.57_0.20_25)]">CHF {data.realEstate.monthlyCharges.toLocaleString("fr-CH")}/mois</p>
+            </div>
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Net immobilier</p>
+              <p className="text-base font-semibold text-foreground">CHF {data.realEstate.netMonthly.toLocaleString("fr-CH")}/mois</p>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 flex flex-col gap-6">
           <FamilyTabs

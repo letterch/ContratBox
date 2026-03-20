@@ -36,6 +36,7 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
     coverageSummary: "",
     exclusions: "",
     importantClauses: "",
+    rentalRole: "tenant",
   })
   const router = useRouter()
 
@@ -65,6 +66,10 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
           coverageSummary: d.contract.coverageSummary ?? "",
           exclusions: d.contract.exclusions ?? "",
           importantClauses: d.contract.importantClauses ?? "",
+          rentalRole:
+            ((d.contract.rawExtraction as Record<string, unknown> | null)?.rentalRole as string) === "owner"
+              ? "owner"
+              : "tenant",
         })
       } catch (e) {
         setError(e instanceof Error ? e.message : "Erreur de chargement")
@@ -154,6 +159,18 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
             <div><Label className="text-xs text-muted-foreground mb-1 block">Maturité hypothécaire</Label><Input type="date" value={form.maturityDate} onChange={(e) => setForm((p) => ({ ...p, maturityDate: e.target.value }))} /></div>
             <div><Label className="text-xs text-muted-foreground mb-1 block">Préavis (jours)</Label><Input type="number" value={form.cancellationNoticeDays} onChange={(e) => setForm((p) => ({ ...p, cancellationNoticeDays: e.target.value }))} /></div>
             <div><Label className="text-xs text-muted-foreground mb-1 block">Taux hypothécaire (%)</Label><Input type="number" step="0.01" value={form.mortgageRate} onChange={(e) => setForm((p) => ({ ...p, mortgageRate: e.target.value }))} /></div>
+            {form.category === "rent_lease" && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Rôle locatif</Label>
+                <Select value={form.rentalRole} onValueChange={(value) => setForm((p) => ({ ...p, rentalRole: value }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="tenant">Locataire (charge)</SelectItem>
+                    <SelectItem value="owner">Propriétaire (revenu)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <Label className="text-xs text-muted-foreground mb-1 block">Couvertures incluses</Label>
               <textarea
@@ -207,6 +224,7 @@ export default function EditContractPage({ params }: { params: Promise<{ id: str
                     coverageSummary: form.coverageSummary || null,
                     exclusions: form.exclusions || null,
                     importantClauses: form.importantClauses || null,
+                    rentalRole: form.category === "rent_lease" ? (form.rentalRole as "owner" | "tenant") : null,
                   })
                   router.push(`/contracts/${data.contract.id}`)
                   router.refresh()

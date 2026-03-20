@@ -91,6 +91,21 @@ export async function getDashboardData() {
       energyMonthlyTarget: features.optimizerEnergyMonthlyTarget,
     }
   )
+  let realEstateIncomeMonthly = 0
+  let realEstateChargesMonthly = 0
+  for (const c of household.contracts) {
+    if (c.category !== "rent_lease" && c.category !== "mortgage") continue
+    const raw = (c.rawExtraction ?? {}) as Record<string, unknown>
+    if (c.category === "rent_lease") {
+      const rent = Number(raw.leaseMonthlyRent ?? c.premiumAmount ?? 0) || 0
+      const charges = Number(raw.leaseMonthlyCharges ?? 0) || 0
+      const role = String(raw.rentalRole ?? "tenant")
+      if (role === "owner") realEstateIncomeMonthly += rent + charges
+      else realEstateChargesMonthly += rent + charges
+    } else {
+      realEstateChargesMonthly += Number(c.premiumAmount ?? 0) || 0
+    }
+  }
 
   return {
     household: {
@@ -105,6 +120,11 @@ export async function getDashboardData() {
       annual: Math.max(annualTotal, costInsights.annualTotal),
     },
     costInsights: features.globalSavingsAssistantEnabled ? costInsights : null,
+    realEstate: {
+      monthlyIncome: realEstateIncomeMonthly,
+      monthlyCharges: realEstateChargesMonthly,
+      netMonthly: realEstateIncomeMonthly - realEstateChargesMonthly,
+    },
     features,
     contractsNearingRenewal,
     contractsInCancellationWindow,

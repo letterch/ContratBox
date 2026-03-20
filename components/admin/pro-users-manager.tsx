@@ -8,6 +8,10 @@ type Row = {
   id: string
   name: string | null
   email: string
+  role: string
+  isOwner: boolean
+  isTenant: boolean
+  createdAt: string | Date
   contracts: number
   isPro: boolean
   subscriptionStatus: string
@@ -32,16 +36,29 @@ export function ProUsersManager() {
     return rows.filter((r) => (r.name ?? "").toLowerCase().includes(q) || r.email.toLowerCase().includes(q))
   }, [rows, query])
 
-  const togglePro = async (userId: string, isPro: boolean) => {
+  const patchUser = async (userId: string, patch: Partial<Pick<Row, "isPro" | "isOwner" | "isTenant">> & { isAdmin?: boolean }) => {
     setSavingUserId(userId)
     try {
       const res = await fetch("/api/admin/pro-users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, isPro }),
+        body: JSON.stringify({ userId, ...patch }),
       })
       if (!res.ok) throw new Error("update")
-      setRows((prev) => prev.map((r) => (r.id === userId ? { ...r, isPro, subscriptionStatus: isPro ? "active" : "free" } : r)))
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === userId
+            ? {
+                ...r,
+                isPro: patch.isPro ?? r.isPro,
+                isOwner: patch.isOwner ?? r.isOwner,
+                isTenant: patch.isTenant ?? r.isTenant,
+                role: patch.isAdmin == null ? r.role : patch.isAdmin ? "admin" : "user",
+                subscriptionStatus: patch.isPro == null ? r.subscriptionStatus : patch.isPro ? "active" : "free",
+              }
+            : r
+        )
+      )
     } finally {
       setSavingUserId(null)
     }
@@ -71,7 +88,11 @@ export function ProUsersManager() {
               <tr className="bg-muted/30 border-b border-border">
                 <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Utilisateur</th>
                 <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Contrats</th>
+                <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Inscription</th>
                 <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Statut</th>
+                <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Admin</th>
+                <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Propriétaire</th>
+                <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Locataire</th>
                 <th className="text-right px-3 py-2 text-[10px] uppercase tracking-wider text-muted-foreground">Pro</th>
               </tr>
             </thead>
@@ -83,12 +104,40 @@ export function ProUsersManager() {
                     <p className="text-[11px] text-muted-foreground">{r.email}</p>
                   </td>
                   <td className="px-3 py-2 text-xs text-foreground">{r.contracts}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString("fr-CH")}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{r.subscriptionStatus}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end">
                       <Switch
+                        checked={r.role === "admin"}
+                        onCheckedChange={(v) => patchUser(r.id, { isAdmin: Boolean(v) })}
+                        disabled={savingUserId === r.id}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end">
+                      <Switch
+                        checked={r.isOwner}
+                        onCheckedChange={(v) => patchUser(r.id, { isOwner: Boolean(v) })}
+                        disabled={savingUserId === r.id}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end">
+                      <Switch
+                        checked={r.isTenant}
+                        onCheckedChange={(v) => patchUser(r.id, { isTenant: Boolean(v) })}
+                        disabled={savingUserId === r.id}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex justify-end">
+                      <Switch
                         checked={r.isPro}
-                        onCheckedChange={(v) => togglePro(r.id, Boolean(v))}
+                        onCheckedChange={(v) => patchUser(r.id, { isPro: Boolean(v) })}
                         disabled={savingUserId === r.id}
                       />
                     </div>

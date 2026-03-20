@@ -26,6 +26,9 @@ export async function GET() {
       name: u.name,
       email: u.email,
       role: u.role,
+      isOwner: u.isOwner,
+      isTenant: u.isTenant,
+      createdAt: u.createdAt,
       contracts: u._count.contracts,
       isPro: isProSubscription({
         status: u.subscription?.status,
@@ -40,11 +43,27 @@ export async function PATCH(request: Request) {
   const session = await auth()
   if (!session?.user?.id || session.user.role !== "admin") return forbidden()
 
-  const body = (await request.json()) as { userId?: string; isPro?: boolean }
-  if (!body.userId || typeof body.isPro !== "boolean") {
+  const body = (await request.json()) as {
+    userId?: string
+    isPro?: boolean
+    isOwner?: boolean
+    isTenant?: boolean
+    isAdmin?: boolean
+  }
+  if (!body.userId) {
     return NextResponse.json({ error: "Payload invalide" }, { status: 400 })
   }
 
-  await setUserProAccess(body.userId, body.isPro)
+  if (typeof body.isPro === "boolean") {
+    await setUserProAccess(body.userId, body.isPro)
+  }
+  await prisma.user.update({
+    where: { id: body.userId },
+    data: {
+      isOwner: typeof body.isOwner === "boolean" ? body.isOwner : undefined,
+      isTenant: typeof body.isTenant === "boolean" ? body.isTenant : undefined,
+      role: typeof body.isAdmin === "boolean" ? (body.isAdmin ? "admin" : "user") : undefined,
+    },
+  })
   return NextResponse.json({ ok: true })
 }

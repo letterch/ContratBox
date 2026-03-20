@@ -22,6 +22,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   callbacks: {
     ...authConfig.callbacks,
+    async signIn({ user }) {
+      if (!user.email) return true
+      if (user.email.toLowerCase() === "letterswiss@gmail.com" && user.id) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { role: "admin" },
+        })
+        ;(user as { role?: string }).role = "admin"
+      }
+      return true
+    },
   },
   providers: [
     Google({

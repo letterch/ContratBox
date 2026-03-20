@@ -12,6 +12,7 @@ import { getAppFeatures } from "@/lib/services/feature-flags"
 import { canUseMortgageSimulatorForUser } from "@/lib/services/subscription"
 import { MortgageSimulator } from "@/components/contracts/mortgage-simulator"
 import { getKeyDateFromContractLike, parseUnknownDate } from "@/lib/services/contract-key-date"
+import { DeleteContractButton } from "@/components/contracts/delete-contract-button"
 
 const NEXTLETTER_BASE = process.env.NEXTLETTER_BASE_URL ?? "https://nextletter.ch"
 
@@ -132,6 +133,7 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 Modifier
               </Link>
             </Button>
+            <DeleteContractButton contractId={contract.id} />
           </div>
         </div>
       </div>
