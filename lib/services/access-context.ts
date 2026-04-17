@@ -11,9 +11,20 @@ import {
   contractQuotaAllowsAdd,
   canUsePlanModule,
   mortgageSimulatorEffectiveAllowed,
+  taskQuotaAllowsAdd,
+  inboxQuotaAllowsAdd,
   type EffectiveEntitlements,
 } from "@/lib/services/entitlements"
 import { isPaidStripeSubscriptionRow } from "@/lib/services/subscription"
+
+export type SubscriptionSnapshot = {
+  status: string
+  stripeCustomerId: string | null
+  stripeSubscriptionId: string | null
+  stripePriceId: string | null
+  currentPeriodEnd: Date | null
+  cancelAtPeriodEnd: boolean
+}
 
 export type AccessHouseholdSummary = {
   id: string
@@ -39,6 +50,8 @@ export type AccessContext = {
   household: AccessHouseholdSummary | null
   /** Libellé plan pour l’UI (sidebar, facturation) */
   planLabel: string
+  /** Abonnement Stripe persisté (webhook / admin) — peut être null */
+  subscription: SubscriptionSnapshot | null
 }
 
 function sessionRole(session: Session | null): string | undefined {
@@ -62,7 +75,14 @@ export async function getAccessContextForUser(
   const [subscription, household, appFeatures] = await Promise.all([
     prisma.subscription.findUnique({
       where: { userId },
-      select: { status: true, stripePriceId: true },
+      select: {
+        status: true,
+        stripePriceId: true,
+        stripeCustomerId: true,
+        stripeSubscriptionId: true,
+        currentPeriodEnd: true,
+        cancelAtPeriodEnd: true,
+      },
     }),
     prisma.household.findFirst({
       where: { ownerId: userId },
@@ -96,6 +116,16 @@ export async function getAccessContextForUser(
     entitlements,
     appFeatures,
     planLabel,
+    subscription: subscription
+      ? {
+          status: subscription.status,
+          stripeCustomerId: subscription.stripeCustomerId,
+          stripeSubscriptionId: subscription.stripeSubscriptionId,
+          stripePriceId: subscription.stripePriceId,
+          currentPeriodEnd: subscription.currentPeriodEnd,
+          cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
+        }
+      : null,
     household: household
       ? {
           id: household.id,
@@ -118,4 +148,12 @@ export function accessCanUseModule(ctx: AccessContext, key: Parameters<typeof ca
 
 export function accessMortgageSimulatorAllowed(ctx: AccessContext): boolean {
   return mortgageSimulatorEffectiveAllowed(ctx.appFeatures, ctx.isPaidStripeSubscription)
+}
+
+export function accessTaskQuotaAllows(ctx: AccessContext, activeTaskCount: number): boolean {
+  return taskQuotaAllowsAdd(ctx.entitlements, activeTaskCount)
+}
+
+export function accessInboxQuotaAllows(ctx: AccessContext, activeInboxCount: number): boolean {
+  return inboxQuotaAllowsAdd(ctx.entitlements, activeInboxCount)
 }

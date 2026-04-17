@@ -5,6 +5,7 @@
 
 export const PLAN_SLUGS = ["free", "solo", "family", "care"] as const
 export type PlanSlug = (typeof PLAN_SLUGS)[number]
+export type PaidPlanSlug = Exclude<PlanSlug, "free">
 
 /** Modules / capacités pilotés par le plan (hors toggles plateforme `app_features`). */
 export const PLAN_FEATURE_KEYS = [
@@ -163,4 +164,36 @@ export function getPlanDefinition(slug: PlanSlug): PlanDefinition {
 /** Abonnement Stripe actif considéré comme payant (hors free). */
 export function isPaidPlanSlug(slug: PlanSlug): boolean {
   return slug !== "free"
+}
+
+export function getStripePriceIdForPlan(slug: PlanSlug): string | null {
+  switch (slug) {
+    case "solo":
+      return normalizePriceId(process.env.STRIPE_PRICE_ID_SOLO) ?? normalizePriceId(process.env.STRIPE_PRICE_ID_MONTHLY)
+    case "family":
+      return normalizePriceId(process.env.STRIPE_PRICE_ID_FAMILY)
+    case "care":
+      return normalizePriceId(process.env.STRIPE_PRICE_ID_CARE) ?? normalizePriceId(process.env.STRIPE_PRO_PRICE_ID)
+    case "free":
+    default:
+      return null
+  }
+}
+
+export function getCheckoutPlanOptions(): Array<{ slug: PaidPlanSlug; label: string; description: string; priceId: string }> {
+  const paidPlans: PaidPlanSlug[] = ["solo", "family", "care"]
+  return paidPlans
+    .map((slug) => {
+      const def = getPlanDefinition(slug as PlanSlug)
+      const priceId = getStripePriceIdForPlan(slug)
+      return priceId
+        ? {
+            slug,
+            label: def.label,
+            description: def.description,
+            priceId,
+          }
+        : null
+    })
+    .filter((x): x is { slug: PaidPlanSlug; label: string; description: string; priceId: string } => Boolean(x))
 }

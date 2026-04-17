@@ -33,6 +33,7 @@ model User {
   subscription     Subscription?
   auditLogs        AuditLog[]
   householdTasksCreated HouseholdTask[] @relation("HouseholdTaskCreator")
+  administrativeItemsCreated AdministrativeItem[]
 }
 
 model Account {
@@ -80,7 +81,8 @@ model Household {
   owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members HouseholdMember[]
   contracts Contract[]
-  tasks   HouseholdTask[]
+  tasks HouseholdTask[]
+  administrativeItems AdministrativeItem[]
 }
 
 model HouseholdMember {
@@ -153,6 +155,7 @@ model Contract {
   documents  Document[]
   reminders  Reminder[]
   tasks      HouseholdTask[]
+  convertedFromInboxItems AdministrativeItem[] @relation("AdministrativeItemConvertedContract")
 }
 
 model Document {
@@ -168,6 +171,44 @@ model Document {
 
   contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
   tasks    HouseholdTask[]
+}
+
+// ——— Inbox administrative (hors Document/contrat) ———
+model AdministrativeItem {
+  id           String @id @default(cuid())
+  householdId  String
+  createdById  String
+
+  originalFilename String
+  mimeType         String
+  sizeBytes        Int
+  r2Key            String
+  r2Bucket         String?
+
+  status String @default("active") // active | archived
+
+  classification String? // invoice | reminder | letter | lease | insurance | tax | bank | health | subscription | other
+  urgency        String? // low | medium | high | critical
+  summary             String?  @db.Text
+  recommendedAction   String?  @db.Text
+  dueDate             DateTime? @db.Date
+  extractedText       String?  @db.Text
+  extractionConfidence Decimal? @db.Decimal(5, 2)
+  rawExtraction Json?
+  convertedToContractId String?
+  convertedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  convertedToContract Contract? @relation("AdministrativeItemConvertedContract", fields: [convertedToContractId], references: [id], onDelete: SetNull)
+  /** Tâche dérivée (FK portée par HouseholdTask.sourceAdministrativeItemId) */
+  derivedTask HouseholdTask?
+
+  @@index([householdId, status])
+  @@index([convertedToContractId])
 }
 
 // ——— Tâches foyer (workflow admin) ———
@@ -188,6 +229,9 @@ model HouseholdTask {
   documentId         String?
   assignedToMemberId String?
 
+  /** Tâche issue d’un document inbox (traçabilité) */
+  sourceAdministrativeItemId String? @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -196,6 +240,7 @@ model HouseholdTask {
   contract   Contract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
   document   Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
   assignedTo HouseholdMember? @relation("HouseholdTaskAssignee", fields: [assignedToMemberId], references: [id], onDelete: SetNull)
+  sourceAdministrativeItem AdministrativeItem? @relation(fields: [sourceAdministrativeItemId], references: [id], onDelete: SetNull)
 
   @@index([householdId, status])
   @@index([createdById])

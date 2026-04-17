@@ -7,6 +7,9 @@ import { FamilyTabs } from "@/components/dashboard/family-tabs"
 import { CategoryGrid } from "@/components/dashboard/category-grid"
 import { RecentContracts } from "@/components/dashboard/recent-contracts"
 import { CostInsightsPanel } from "@/components/dashboard/cost-insights"
+import { TasksPreview } from "@/components/dashboard/tasks-preview"
+import { TimelinePreview } from "@/components/dashboard/timeline-preview"
+import type { TimelineEvent } from "@/lib/services/reminder-timeline"
 
 type DashboardPayload = {
   totals?: { monthly?: number; annual?: number }
@@ -19,7 +22,8 @@ type DashboardPayload = {
     id: string
     memberId?: string | null
     isHouseholdWide?: boolean
-    premiumAmount?: number | null
+    /** Prisma peut renvoyer Decimal côté serveur */
+    premiumAmount?: number | null | { toNumber(): number }
     premiumFrequency?: string | null
   }>
   recentContracts?: Array<{ id: string; memberId?: string | null; isHouseholdWide?: boolean }>
@@ -27,6 +31,14 @@ type DashboardPayload = {
   contractsNearingRenewal?: Array<{ id: string }>
   mortgageAlerts?: Array<{ id: string; contractId: string }>
   realEstate?: { monthlyIncome: number; monthlyCharges: number; netMonthly: number }
+  taskPreview?: Array<{
+    id: string
+    title: string
+    status: string
+    priority: string
+    dueDate: Date | null
+  }>
+  timelinePreview?: TimelineEvent[]
 }
 
 export function DashboardContent({ data }: { data: DashboardPayload | null }) {
@@ -85,6 +97,8 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
         alertCount={cancellationContracts.length}
       />
       <CostInsightsPanel insights={data?.costInsights as Parameters<typeof CostInsightsPanel>[0]["insights"]} />
+      {!!data?.taskPreview?.length && <TasksPreview tasks={data.taskPreview} />}
+      {!!data?.timelinePreview?.length && <TimelinePreview events={data.timelinePreview} />}
       {!!data?.realEstate && (data.realEstate.monthlyIncome > 0 || data.realEstate.monthlyCharges > 0) && (
         <div className="bg-card rounded-2xl border border-border shadow-card p-5">
           <h3 className="text-sm font-semibold text-foreground mb-3">Vue immobilière</h3>

@@ -97,6 +97,28 @@ export async function POST(req: Request) {
 
   try {
     switch (event.type) {
+      case "checkout.session.completed": {
+        const sess = event.data.object as Stripe.Checkout.Session
+        const userId = sess.metadata?.userId ?? sess.client_reference_id
+        const customerId = typeof sess.customer === "string" ? sess.customer : sess.customer?.id
+        const subId = typeof sess.subscription === "string" ? sess.subscription : sess.subscription?.id
+        if (userId && customerId) {
+          await prisma.subscription.upsert({
+            where: { userId },
+            create: {
+              userId,
+              stripeCustomerId: customerId,
+              stripeSubscriptionId: subId ?? null,
+              status: "trialing",
+            },
+            update: {
+              stripeCustomerId: customerId,
+              stripeSubscriptionId: subId ?? undefined,
+            },
+          })
+        }
+        break
+      }
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted":

@@ -40,6 +40,19 @@ export function contractQuotaAllowsAdd(
   return currentContractCount < max
 }
 
+/** Tâches non archivées. */
+export function taskQuotaAllowsAdd(entitlements: EffectiveEntitlements, activeTaskCount: number): boolean {
+  const max = entitlements.quotas.maxTasks
+  if (max == null) return true
+  return activeTaskCount < max
+}
+
+export function inboxQuotaAllowsAdd(entitlements: EffectiveEntitlements, activeInboxCount: number): boolean {
+  const max = entitlements.quotas.maxInboxItems
+  if (max == null) return true
+  return activeInboxCount < max
+}
+
 /** Accès minimal à une route module (ex. inbox). */
 export function canUsePlanModule(
   entitlements: EffectiveEntitlements,

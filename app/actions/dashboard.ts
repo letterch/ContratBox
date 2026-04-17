@@ -7,6 +7,9 @@ import { getMortgageAlerts } from "@/lib/services/mortgage"
 import { buildHouseholdCostInsights } from "@/lib/services/household-costs"
 import { getAppFeatures } from "@/lib/services/feature-flags"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
+import { getAccessContextForUser, accessCanUseModule } from "@/lib/services/access-context"
+import { getDashboardTaskPreview } from "@/lib/services/household-task"
+import { buildHouseholdTimeline } from "@/lib/services/reminder-timeline"
 
 export async function getDashboardData() {
   const session = await auth()
@@ -24,7 +27,19 @@ export async function getDashboardData() {
   })
   if (!household) return null
 
+  const accessCtx = await getAccessContextForUser(session.user.id, session)
   const now = new Date()
+  const taskPreview =
+    accessCtx && accessCtx.household?.id === household.id && accessCanUseModule(accessCtx, "module_tasks")
+      ? await getDashboardTaskPreview(household.id, session.user.id, 6)
+      : []
+  const timelinePreview = await buildHouseholdTimeline({
+    householdId: household.id,
+    now,
+    daysAhead: 120,
+    take: 8,
+  })
+
   const features = await getAppFeatures()
   const in30Days = new Date(now)
   in30Days.setDate(in30Days.getDate() + 30)
@@ -131,6 +146,8 @@ export async function getDashboardData() {
     mortgageAlerts,
     recentContracts: contractsWithDerivedDeadline.slice(0, 6),
     contracts: contractsWithDerivedDeadline,
+    taskPreview,
+    timelinePreview,
   }
 }
 

@@ -7,8 +7,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Upload, FileText, Check, ChevronRight, Sparkles, ArrowLeft } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { uploadAndExtractContract, saveContractFromUpload, getUploadPageData } from "@/app/actions/contracts"
+import { uploadAndExtractContract, saveContractFromUpload, getUploadPageData, getUploadSeedFromInbox } from "@/app/actions/contracts"
 import { CONTRACT_CATEGORIES, CONTRACT_CATEGORY_SLUGS } from "@/lib/constants"
 import type { SaveContractInput } from "@/app/actions/contracts"
 
@@ -271,18 +272,42 @@ function ReviewStep({
 }
 
 export default function UploadPage() {
+  const searchParams = useSearchParams()
   const [step, setStep] = useState<Step>("upload")
   const [dragging, setDragging] = useState(false)
   const [fileName, setFileName] = useState("")
   const [extractedState, setExtractedState] = useState<ExtractedState | null>(null)
   const [saveError, setSaveError] = useState("")
   const [saving, setSaving] = useState(false)
+  const [sourceAdministrativeItemId, setSourceAdministrativeItemId] = useState<string | null>(null)
   const [pageData, setPageData] = useState<{ canAdd: boolean; members: { id: string; firstName: string; lastName?: string | null }[] } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getUploadPageData().then(setPageData)
   }, [])
+
+  useEffect(() => {
+    const inboxId = searchParams.get("fromInbox")
+    if (!inboxId || extractedState) return
+    setStep("extracting")
+    setSaveError("")
+    getUploadSeedFromInbox(inboxId)
+      .then((seed) => {
+        setExtractedState({
+          extracted: seed.extracted as Record<string, unknown>,
+          extractedText: seed.extractedText,
+          file: seed.file,
+        })
+        setSourceAdministrativeItemId(seed.sourceAdministrativeItemId)
+        setFileName(seed.file.name)
+        setStep("review")
+      })
+      .catch((e) => {
+        setSaveError(e instanceof Error ? e.message : "Impossible de préparer la conversion depuis l’inbox.")
+        setStep("upload")
+      })
+  }, [searchParams, extractedState])
   const members = pageData?.members ?? []
   const canAdd = pageData?.canAdd ?? true
   const categoryOptions = CONTRACT_CATEGORY_SLUGS.map((slug) => ({
@@ -295,6 +320,7 @@ export default function UploadPage() {
   }))
 
   const handleFile = async (file: File) => {
+    setSourceAdministrativeItemId(null)
     setFileName(file.name)
     setStep("extracting")
     setSaveError("")
@@ -321,7 +347,7 @@ export default function UploadPage() {
     return (
       <div className="min-h-screen bg-background pb-32 lg:pb-8 flex flex-col items-center justify-center gap-4 px-4">
         <p className="text-center text-muted-foreground">Vous avez atteint la limite de contrats gratuits. Passez à un abonnement pour en ajouter.</p>
-        <Button asChild><Link href="/settings">Paramètres / Abonnement</Link></Button>
+        <Button asChild><Link href="/billing">Voir les offres</Link></Button>
       </div>
     )
   }
@@ -336,7 +362,11 @@ export default function UploadPage() {
           </Link>
           <div>
             <h1 className="text-base font-bold text-foreground">Ajouter un contrat</h1>
-            <p className="text-xs text-muted-foreground">Import par PDF, image ou saisie manuelle</p>
+            <p className="text-xs text-muted-foreground">
+              {sourceAdministrativeItemId
+                ? "Prérempli depuis l’inbox — vérifiez puis validez manuellement"
+                : "Import par PDF, image ou saisie manuelle"}
+            </p>
           </div>
         </div>
       </div>
@@ -492,7 +522,10 @@ export default function UploadPage() {
               setSaving(true)
               setSaveError("")
               try {
-                await saveContractFromUpload(data)
+                await saveContractFromUpload({
+                  ...data,
+                  sourceAdministrativeItemId,
+                })
                 setStep("done")
               } catch (e) {
                 setSaveError(e instanceof Error ? e.message : "Erreur lors de l'enregistrement")
@@ -513,7 +546,7 @@ export default function UploadPage() {
             <div>
               <p className="text-xl font-bold text-foreground mb-2">Contrat enregistré !</p>
               <p className="text-sm text-muted-foreground max-w-sm">
-                Swisscom Fibre a été ajouté à votre ménage. Vous serez alerté 30 jours avant l'échéance.
+                {fileName ? `"${fileName}" a été converti en contrat et ajouté à votre ménage.` : "Le contrat a été ajouté à votre ménage."} Vous serez alerté avant les échéances importantes.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-3">

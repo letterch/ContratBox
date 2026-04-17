@@ -4,6 +4,7 @@ import { getDashboardData } from "@/app/actions/dashboard"
 import { prisma } from "@/lib/db"
 import { AppSidebar } from "@/components/app-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
+import { Toaster } from "@/components/ui/sonner"
 import { getAccessContextForUser } from "@/lib/services/access-context"
 import { toDesktopNavDtos, toMobileNavDtos } from "@/lib/services/navigation"
 
@@ -40,6 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {children}
       </main>
       <MobileNav navItems={mobileNav} />
+      <Toaster richColors position="top-center" />
     </div>
   )
 }

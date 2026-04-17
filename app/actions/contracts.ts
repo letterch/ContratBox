@@ -11,6 +11,7 @@ import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
 import type { ContractCategorySlug } from "@/lib/constants"
 import { getContractById } from "@/lib/services/contract"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
+import { getInboxItemContractSeed, markAdministrativeItemConverted } from "@/lib/services/administrative-inbox"
 
 export type UploadAndExtractResult = {
   ok: true
@@ -64,6 +65,7 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
 
 export type SaveContractInput = {
   file: { r2Key: string; name: string; mimeType: string; sizeBytes: number }
+  sourceAdministrativeItemId?: string | null
   title?: string | null
   provider?: string | null
   contractType?: string | null
@@ -246,7 +248,19 @@ export async function saveContractFromUpload(data: SaveContractInput) {
     }
   }
 
+  if (data.sourceAdministrativeItemId) {
+    await markAdministrativeItemConverted(data.sourceAdministrativeItemId, contract.id, session.user.id)
+  }
+
   return { ok: true, contractId: contract.id }
+}
+
+export async function getUploadSeedFromInbox(itemId: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Non authentifié")
+  const { allowed } = await canAddContract(session.user.id)
+  if (!allowed) throw new Error("Limite de contrats atteinte pour votre offre.")
+  return getInboxItemContractSeed(itemId, session.user.id)
 }
 
 export async function getCanAddContract() {

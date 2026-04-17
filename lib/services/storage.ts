@@ -101,6 +101,12 @@ export function documentKey(userId: string, contractId: string, filename: string
   return `${userId}/${contractId}/${timestamp}-${safe}`
 }
 
+/** Fichiers inbox (hors modèle Document lié à un contrat). */
+export function inboxObjectKey(userId: string, filename: string): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_")
+  return `${userId}/inbox/${Date.now()}-${safe}`
+}
+
 export function getStorageDebugConfig() {
   return {
     endpoint: candidateEndpoints[0] ?? "undefined",
