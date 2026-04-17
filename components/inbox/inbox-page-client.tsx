@@ -126,11 +126,11 @@ export function InboxPageClient({ initial }: { initial: Initial }) {
                   size="sm"
                   variant="secondary"
                   className="rounded-xl gap-1 h-8 text-xs"
-                  disabled={pending || !!item.derivedTask}
+                  disabled={pending || item.derivedTasks.length > 0}
                   onClick={() => onCreateTask(item.id)}
                 >
                   <ListTodo className="w-3.5 h-3.5" />
-                  {item.derivedTask ? "Tâche créée" : "Créer une tâche"}
+                  {item.derivedTasks.length > 0 ? "Tâche créée" : "Créer une tâche"}
                 </Button>
                 <Button
                   type="button"

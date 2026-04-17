@@ -204,8 +204,8 @@ model AdministrativeItem {
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
   convertedToContract Contract? @relation("AdministrativeItemConvertedContract", fields: [convertedToContractId], references: [id], onDelete: SetNull)
-  /** Tâche dérivée (FK portée par HouseholdTask.sourceAdministrativeItemId) */
-  derivedTask HouseholdTask?
+  /** Tâches dérivées (la logique métier limite à 1 via service). */
+  derivedTasks HouseholdTask[]
 
   @@index([householdId, status])
   @@index([convertedToContractId])
@@ -230,7 +230,7 @@ model HouseholdTask {
   assignedToMemberId String?
 
   /** Tâche issue d’un document inbox (traçabilité) */
-  sourceAdministrativeItemId String? @unique
+  sourceAdministrativeItemId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -244,6 +244,7 @@ model HouseholdTask {
 
   @@index([householdId, status])
   @@index([createdById])
+  @@index([sourceAdministrativeItemId])
 }
 
 // ——— IA ———

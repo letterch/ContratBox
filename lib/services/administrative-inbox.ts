@@ -24,7 +24,11 @@ export async function listAdministrativeItems(householdId: string, userId: strin
     orderBy: { createdAt: "desc" },
     take,
     include: {
-      derivedTask: { select: { id: true, title: true, status: true } },
+      derivedTasks: {
+        select: { id: true, title: true, status: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     },
   })
 }

@@ -108,7 +108,7 @@ export async function createHouseholdTask(input: CreateHouseholdTaskInput) {
       select: { id: true },
     })
     if (!item) throw new Error("Document inbox introuvable")
-    const existing = await prisma.householdTask.findUnique({
+    const existing = await prisma.householdTask.findFirst({
       where: { sourceAdministrativeItemId: input.sourceAdministrativeItemId },
       select: { id: true },
     })
