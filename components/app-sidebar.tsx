@@ -4,40 +4,30 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
-import {
-  LayoutDashboard,
-  FileText,
-  Upload,
-  MessageSquare,
-  Settings,
-  ChevronDown,
-  Bell,
-  LogOut,
-  Home,
-  ShieldCheck,
-  Building2,
-} from "lucide-react"
+import { ChevronDown, Bell, LogOut, Home } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Session } from "next-auth"
-
-const navItems = [
-  { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
-  { href: "/contracts", label: "Contrats", icon: FileText },
-  { href: "/upload", label: "Ajouter un contrat", icon: Upload },
-  { href: "/ai", label: "Assistant IA", icon: MessageSquare },
-  { href: "/settings", label: "Paramètres", icon: Settings },
-  { href: "/real-estate", label: "Gestion immobilière", icon: Building2 },
-  { href: "/admin", label: "Administration", icon: ShieldCheck },
-]
+import type { NavItemDTO } from "@/lib/services/navigation"
+import { NAV_ICON_COMPONENTS } from "@/components/nav-config"
 
 type AppSidebarProps = {
   session: Session | null
   householdName?: string | null
   contractCount?: number | null
   memberCount?: number | null
+  /** Menu calculé côté serveur via `buildMainNavItems` / `toDesktopNavDtos` */
+  navItems: NavItemDTO[]
+  planLabel: string
 }
 
-export function AppSidebar({ session, householdName = "Mon ménage", contractCount, memberCount = 0 }: AppSidebarProps) {
+export function AppSidebar({
+  session,
+  householdName = "Mon ménage",
+  contractCount,
+  memberCount = 0,
+  navItems,
+  planLabel,
+}: AppSidebarProps) {
   const pathname = usePathname()
   const user = session?.user
 
@@ -70,6 +60,7 @@ export function AppSidebar({ session, householdName = "Mon ménage", contractCou
       {/* Nav */}
       <nav className="flex-1 px-4 py-4 flex flex-col gap-1">
         {navItems.map((item) => {
+          const Icon = NAV_ICON_COMPONENTS[item.icon]
           const active = pathname === item.href || pathname.startsWith(item.href + "/")
           return (
             <Link
@@ -83,7 +74,7 @@ export function AppSidebar({ session, householdName = "Mon ménage", contractCou
               )}
             >
               <div className="flex items-center gap-3">
-                <item.icon className="w-4 h-4 flex-shrink-0" />
+                <Icon className="w-4 h-4 flex-shrink-0" />
                 {item.label}
               </div>
               {item.href === "/contracts" && contractCount != null && (
@@ -124,7 +115,7 @@ export function AppSidebar({ session, householdName = "Mon ménage", contractCou
           </div>
           <div>
             <p className="text-sidebar-foreground text-xs font-medium truncate max-w-[120px]">{user?.name ?? user?.email ?? "Compte"}</p>
-            <p className="text-sidebar-foreground/40 text-[10px]">Gratuit</p>
+            <p className="text-sidebar-foreground/40 text-[10px]">{planLabel}</p>
           </div>
         </div>
         <button

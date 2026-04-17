@@ -4,6 +4,8 @@ import { getDashboardData } from "@/app/actions/dashboard"
 import { prisma } from "@/lib/db"
 import { AppSidebar } from "@/components/app-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
+import { getAccessContextForUser } from "@/lib/services/access-context"
+import { toDesktopNavDtos, toMobileNavDtos } from "@/lib/services/navigation"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -19,6 +21,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const dashboard = session?.user ? await getDashboardData() : null
+  const access = session?.user?.id ? await getAccessContextForUser(session.user.id, session) : null
+  const desktopNav = toDesktopNavDtos(access)
+  const mobileNav = toMobileNavDtos(access)
+  const planLabel = access?.planLabel ?? "Gratuit"
+
   return (
     <div className="flex min-h-screen bg-background">
       <AppSidebar
@@ -26,11 +33,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         householdName={dashboard?.household?.name}
         contractCount={dashboard?.household?.contractCount}
         memberCount={dashboard?.household?.memberCount}
+        navItems={desktopNav}
+        planLabel={planLabel}
       />
       <main className="flex-1 min-w-0 pb-20 lg:pb-0">
         {children}
       </main>
-      <MobileNav />
+      <MobileNav navItems={mobileNav} />
     </div>
   )
 }

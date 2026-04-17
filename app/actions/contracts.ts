@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { FREE_CONTRACT_LIMIT } from "@/lib/constants"
 import { canAddContract, createContract } from "@/lib/services/contract"
 import { uploadDocument, documentKey, getStorageDebugConfig } from "@/lib/services/storage"
 import { extractTextFromFile } from "@/lib/services/ocr"
@@ -250,7 +251,7 @@ export async function saveContractFromUpload(data: SaveContractInput) {
 
 export async function getCanAddContract() {
   const session = await auth()
-  if (!session?.user?.id) return { allowed: false, count: 0, limit: 3 }
+  if (!session?.user?.id) return { allowed: false, count: 0, limit: FREE_CONTRACT_LIMIT }
   return canAddContract(session.user.id)
 }
 

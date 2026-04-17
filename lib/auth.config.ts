@@ -14,6 +14,9 @@ export const authConfig: NextAuthConfig = {
         nextUrl.pathname.startsWith("/ai") ||
         nextUrl.pathname.startsWith("/settings") ||
         nextUrl.pathname.startsWith("/real-estate") ||
+        nextUrl.pathname.startsWith("/inbox") ||
+        nextUrl.pathname.startsWith("/tasks") ||
+        nextUrl.pathname.startsWith("/billing") ||
         nextUrl.pathname.startsWith("/onboarding")
       const isAdmin = nextUrl.pathname.startsWith("/admin")
 

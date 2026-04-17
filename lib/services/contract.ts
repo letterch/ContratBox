@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db"
 import { FREE_CONTRACT_LIMIT } from "@/lib/constants"
 import type { ContractCategorySlug } from "@/lib/constants"
+import { accessCanAddContract, getAccessContextForUser } from "@/lib/services/access-context"
 
 export async function getContractsForHousehold(householdId: string, userId: string) {
   const household = await prisma.household.findFirst({
@@ -39,16 +40,15 @@ export async function countContractsForHousehold(householdId: string, userId: st
 }
 
 export async function canAddContract(userId: string): Promise<{ allowed: boolean; count: number; limit: number }> {
-  const household = await prisma.household.findFirst({
-    where: { ownerId: userId },
-    include: { _count: { select: { contracts: true } } },
-  })
-  if (!household) return { allowed: false, count: 0, limit: FREE_CONTRACT_LIMIT }
-  const count = household._count.contracts
-  // TODO: si abonnement payant, allowed = true
-  const hasPaidSubscription = false
-  const allowed = hasPaidSubscription || count < FREE_CONTRACT_LIMIT
-  return { allowed, count, limit: FREE_CONTRACT_LIMIT }
+  const ctx = await getAccessContextForUser(userId, null)
+  if (!ctx?.household) {
+    return { allowed: false, count: 0, limit: FREE_CONTRACT_LIMIT }
+  }
+  const count = ctx.household.contractCount
+  const max = ctx.entitlements.quotas.maxContracts
+  const allowed = accessCanAddContract(ctx)
+  const limit = max ?? 999_999
+  return { allowed, count, limit }
 }
 
 export type CreateContractInput = {

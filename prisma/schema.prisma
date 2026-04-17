@@ -32,6 +32,7 @@ model User {
   aiChatThreads    AIChatThread[]
   subscription     Subscription?
   auditLogs        AuditLog[]
+  householdTasksCreated HouseholdTask[] @relation("HouseholdTaskCreator")
 }
 
 model Account {
@@ -79,6 +80,7 @@ model Household {
   owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members HouseholdMember[]
   contracts Contract[]
+  tasks   HouseholdTask[]
 }
 
 model HouseholdMember {
@@ -96,6 +98,7 @@ model HouseholdMember {
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   contracts  Contract[]
+  assignedTasks HouseholdTask[] @relation("HouseholdTaskAssignee")
 }
 
 // ——— Contrats & documents ———
@@ -149,6 +152,7 @@ model Contract {
   member     HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
   documents  Document[]
   reminders  Reminder[]
+  tasks      HouseholdTask[]
 }
 
 model Document {
@@ -163,6 +167,38 @@ model Document {
   createdAt  DateTime @default(now())
 
   contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  tasks    HouseholdTask[]
+}
+
+// ——— Tâches foyer (workflow admin) ———
+model HouseholdTask {
+  id          String   @id @default(cuid())
+  householdId String
+  createdById String
+
+  title       String
+  description String?  @db.Text
+
+  status   String @default("todo") // todo | in_progress | waiting | done | archived
+  priority String @default("medium") // low | medium | high | urgent
+
+  dueDate DateTime? @db.Date
+
+  contractId         String?
+  documentId         String?
+  assignedToMemberId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  household  Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy  User             @relation("HouseholdTaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  contract   Contract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  document   Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  assignedTo HouseholdMember? @relation("HouseholdTaskAssignee", fields: [assignedToMemberId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, status])
+  @@index([createdById])
 }
 
 // ——— IA ———

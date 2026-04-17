@@ -28,8 +28,10 @@ export type ContractCategorySlug = keyof typeof CONTRACT_CATEGORIES
 
 export const CONTRACT_CATEGORY_SLUGS = Object.keys(CONTRACT_CATEGORIES) as ContractCategorySlug[]
 
-/** Limite gratuite : nombre de contrats sans abonnement */
-export const FREE_CONTRACT_LIMIT = 3
+import { FREE_PLAN_CONTRACT_LIMIT } from "@/lib/config/plans"
+
+/** Limite gratuite : alignée sur `lib/config/plans.ts` (plan free). */
+export const FREE_CONTRACT_LIMIT = FREE_PLAN_CONTRACT_LIMIT
 
 /** Rôles des membres du ménage */
 export const MEMBER_ROLES = ["adult", "child", "other"] as const
