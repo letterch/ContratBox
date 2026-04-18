@@ -6,12 +6,11 @@
 export const OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 const DEFAULT_PRIMARY = "anthropic/claude-3.5-sonnet"
-/** Modèles économiques / disponibles en secours après le Sonnet. */
-const DEFAULT_FALLBACKS = [
-  "anthropic/claude-3.5-haiku",
-  "google/gemini-2.0-flash-lite-001",
-  "openai/gpt-4o-mini",
-] as const
+/**
+ * Secours après le Sonnet (sans le reprendre dans `models`).
+ * Slugs stables sur OpenRouter ; ajoutez Gemini etc. via OPENROUTER_MODEL_FALLBACKS si besoin.
+ */
+const DEFAULT_FALLBACKS = ["anthropic/claude-3.5-haiku", "openai/gpt-4o-mini"] as const
 
 export type OpenRouterChatMessage = { role: string; content: string }
 
@@ -25,6 +24,11 @@ function truthyAuto(v: string | undefined): boolean {
   return ["1", "true", "yes", "on"].includes((v ?? "").toLowerCase().trim())
 }
 
+/** Retire guillemets / espaces (copier-coller depuis Railway ou .env). */
+function cleanModelId(raw: string): string {
+  return raw.trim().replace(/^["']+|["']+$/g, "").trim()
+}
+
 function parseFallbackSlugs(): string[] {
   const raw = process.env.OPENROUTER_MODEL_FALLBACKS
   if (raw === "") return []
@@ -33,13 +37,13 @@ function parseFallbackSlugs(): string[] {
   }
   return raw
     .split(/[\n,]+/)
-    .map((s) => s.trim())
+    .map((s) => cleanModelId(s))
     .filter(Boolean)
 }
 
 /** Chaîne unique : principal puis secours (sans doublons). */
 export function getOpenRouterModelChain(): string[] {
-  const primary = (process.env.OPENROUTER_MODEL ?? DEFAULT_PRIMARY).trim() || DEFAULT_PRIMARY
+  const primary = cleanModelId(process.env.OPENROUTER_MODEL ?? DEFAULT_PRIMARY) || DEFAULT_PRIMARY
   const rest = parseFallbackSlugs().filter((m) => m !== primary)
   const out: string[] = []
   for (const m of [primary, ...rest]) {
@@ -50,8 +54,9 @@ export function getOpenRouterModelChain(): string[] {
 
 /**
  * Corps JSON pour POST /v1/chat/completions.
- * - Par défaut : `models: [principal, …]` → failover automatique OpenRouter.
- * - Si `OPENROUTER_USE_AUTO=true` : `model: openrouter/auto` (sélection par OpenRouter / NotDiamond).
+ * - Failover : `model` = principal, `models` = **uniquement** les secours (schéma OpenAI SDK / OpenRouter).
+ *   Un seul grand tableau `models` sans `model` peut provoquer une erreur 400 selon la validation.
+ * - Si `OPENROUTER_USE_AUTO=true` : `model: openrouter/auto`.
  */
 export function buildOpenRouterChatCompletionBody(options: OpenRouterChatBodyOptions): Record<string, unknown> {
   const { messages, max_tokens, temperature } = options
@@ -66,9 +71,12 @@ export function buildOpenRouterChatCompletionBody(options: OpenRouterChatBodyOpt
   }
 
   const chain = getOpenRouterModelChain()
-  if (chain.length <= 1) {
+  const primary = chain[0] ?? DEFAULT_PRIMARY
+  const fallbacks = chain.slice(1)
+
+  if (fallbacks.length === 0) {
     return {
-      model: chain[0] ?? DEFAULT_PRIMARY,
+      model: primary,
       messages,
       ...(max_tokens != null ? { max_tokens } : {}),
       ...(temperature != null ? { temperature } : {}),
@@ -76,7 +84,8 @@ export function buildOpenRouterChatCompletionBody(options: OpenRouterChatBodyOpt
   }
 
   return {
-    models: chain,
+    model: primary,
+    models: fallbacks,
     messages,
     ...(max_tokens != null ? { max_tokens } : {}),
     ...(temperature != null ? { temperature } : {}),
