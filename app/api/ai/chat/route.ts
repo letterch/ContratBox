@@ -5,10 +5,12 @@ import { getMortgagePlan } from "@/lib/services/mortgage"
 import { buildHouseholdCostInsights } from "@/lib/services/household-costs"
 import { getAppFeatures } from "@/lib/services/feature-flags"
 import { AGENT_ACTION_ROADMAP, buildContractDocumentContextBlock } from "@/lib/services/document-knowledge"
+import {
+  buildOpenRouterChatCompletionBody,
+  OPENROUTER_CHAT_COMPLETIONS_URL,
+} from "@/lib/services/openrouter-models"
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-const MODEL = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet"
-const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 30000)
+const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 
 type ChatBody = {
   message?: string
@@ -193,7 +195,7 @@ export async function POST(request: Request) {
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const res = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -201,39 +203,40 @@ export async function POST(request: Request) {
         "HTTP-Referer": process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000",
         "X-Title": "ContratBox Assistant",
       },
-      body: JSON.stringify({
-        model: MODEL,
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "system",
-            content:
-              "Contexte contrats utilisateur (source interne ContratBox) :\n" +
-              (contractsContext || "Aucun contrat disponible."),
-          },
-          {
-            role: "system",
-            content:
-              detectedLanguage === "it"
-                ? "Rispondi in italiano con chiarezza. Se mancano dati, dichiaralo esplicitamente."
-                : detectedLanguage === "en"
-                  ? "Answer in English clearly. If data is missing, state it explicitly."
-                  : "Réponds en français clairement. Si des données manquent, indique-le explicitement.",
-          },
-          ...(features.globalSavingsAssistantEnabled
-            ? [
-                {
-                  role: "system" as const,
-                  content:
-                    `Vue coûts ménage: CHF ${Math.round(costInsights.monthlyTotal)} / mois, CHF ${Math.round(costInsights.annualTotal)} / an.\n` +
-                    `Suggestions automatiques: ${costInsights.suggestions.join(" | ")}`,
-                },
-              ]
-            : []),
-          { role: "user", content: message },
-        ],
-      }),
+      body: JSON.stringify(
+        buildOpenRouterChatCompletionBody({
+          temperature: 0.2,
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "system",
+              content:
+                "Contexte contrats utilisateur (source interne ContratBox) :\n" +
+                (contractsContext || "Aucun contrat disponible."),
+            },
+            {
+              role: "system",
+              content:
+                detectedLanguage === "it"
+                  ? "Rispondi in italiano con chiarezza. Se mancano dati, dichiaralo esplicitamente."
+                  : detectedLanguage === "en"
+                    ? "Answer in English clearly. If data is missing, state it explicitly."
+                    : "Réponds en français clairement. Si des données manquent, indique-le explicitement.",
+            },
+            ...(features.globalSavingsAssistantEnabled
+              ? [
+                  {
+                    role: "system",
+                    content:
+                      `Vue coûts ménage: CHF ${Math.round(costInsights.monthlyTotal)} / mois, CHF ${Math.round(costInsights.annualTotal)} / an.\n` +
+                      `Suggestions automatiques: ${costInsights.suggestions.join(" | ")}`,
+                  },
+                ]
+              : []),
+            { role: "user", content: message },
+          ],
+        })
+      ),
       signal: controller.signal,
     })
 

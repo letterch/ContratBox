@@ -5,10 +5,12 @@
 
 import type { InboxClassification, InboxUrgency } from "@/lib/types/administrative-inbox"
 import { INBOX_CLASSIFICATIONS, INBOX_URGENCIES } from "@/lib/types/administrative-inbox"
+import {
+  buildOpenRouterChatCompletionBody,
+  OPENROUTER_CHAT_COMPLETIONS_URL,
+} from "@/lib/services/openrouter-models"
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-const MODEL = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet"
-const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 30000)
+const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 
 export type ExtractedInboxDocument = {
   classification?: InboxClassification | null
@@ -93,18 +95,21 @@ export async function extractAdministrativeDocument(text: string): Promise<Extra
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
     try {
-      const res = await fetch(OPENROUTER_URL, {
+      const res = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
           "HTTP-Referer": process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000",
+          "X-Title": "ContratBox inbox extraction",
         },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [{ role: "user", content: buildInboxPrompt(text || "(vide)") }],
-          max_tokens: 1200,
-        }),
+        body: JSON.stringify(
+          buildOpenRouterChatCompletionBody({
+            messages: [{ role: "user", content: buildInboxPrompt(text || "(vide)") }],
+            max_tokens: 1200,
+            temperature: 0,
+          })
+        ),
         signal: controller.signal,
       })
       if (!res.ok) throw new Error(await res.text())

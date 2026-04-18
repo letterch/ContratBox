@@ -1,4 +1,8 @@
 import { CONTRACT_CATEGORIES, type ContractCategorySlug } from "@/lib/constants"
+import {
+  buildOpenRouterChatCompletionBody,
+  OPENROUTER_CHAT_COMPLETIONS_URL,
+} from "@/lib/services/openrouter-models"
 
 export type ExtractedContractData = {
   title?: string | null
@@ -49,8 +53,6 @@ export type ExtractedContractData = {
   rawConfidence?: Record<string, number>
 }
 
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-const MODEL = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet"
 /** Après OCR, le prompt peut être long ; 60s par défaut sur hébergement. */
 const EXTRACTION_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 
@@ -75,7 +77,7 @@ function humanHintFromOpenRouterError(message: string): string | null {
     return "Trop de requêtes vers OpenRouter (429). Patientez quelques minutes ou changez de modèle."
   }
   if (message.includes("OpenRouter error: 400")) {
-    return "Requête rejetée par OpenRouter (400), souvent un identifiant de modèle invalide. Vérifiez OPENROUTER_MODEL (liste sur openrouter.ai/models), par ex. anthropic/claude-3.5-haiku."
+    return "Requête rejetée par OpenRouter (400), souvent un identifiant de modèle invalide. Vérifiez OPENROUTER_MODEL et OPENROUTER_MODEL_FALLBACKS (openrouter.ai/models), ou désactivez OPENROUTER_USE_AUTO."
   }
   if (message.includes("OpenRouter error: 404")) {
     return "Modèle introuvable sur OpenRouter (404). Mettez à jour OPENROUTER_MODEL vers un modèle actif."
@@ -303,7 +305,7 @@ export async function extractContractData(text: string): Promise<ContractExtract
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), EXTRACTION_TIMEOUT_MS)
     try {
-      const res = await fetch(OPENROUTER_URL, {
+      const res = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -311,12 +313,13 @@ export async function extractContractData(text: string): Promise<ContractExtract
           "HTTP-Referer": process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000",
           "X-Title": "ContratBox extraction contrat",
         },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [{ role: "user", content: buildExtractionPrompt(text) }],
-          max_tokens: 4096,
-          temperature: 0,
-        }),
+        body: JSON.stringify(
+          buildOpenRouterChatCompletionBody({
+            messages: [{ role: "user", content: buildExtractionPrompt(text) }],
+            max_tokens: 4096,
+            temperature: 0,
+          })
+        ),
         signal: controller.signal,
       })
       if (!res.ok) {
