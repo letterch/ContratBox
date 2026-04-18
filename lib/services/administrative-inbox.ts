@@ -2,9 +2,10 @@ import { prisma } from "@/lib/db"
 import { uploadDocument, inboxObjectKey, isStorageConfigured } from "@/lib/services/storage"
 import { extractTextFromFile } from "@/lib/services/ocr"
 import { extractAdministrativeDocument } from "@/lib/services/inbox-extraction"
-import { extractContractData } from "@/lib/services/extraction"
+import { extractContractData, userFacingExtractionWarning } from "@/lib/services/extraction"
 import { createHouseholdTask } from "@/lib/services/household-task"
 import type { HouseholdTaskPriority } from "@/lib/types/household-task"
+import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
 import type { Prisma } from "@prisma/client"
 
 export async function countActiveInboxItems(householdId: string): Promise<number> {
@@ -69,7 +70,7 @@ export async function uploadAndAnalyzeInboxItem(
   const buffer = Buffer.from(await file.arrayBuffer())
   const mimeType = file.type || "application/pdf"
 
-  const { text: extractedText } = await extractTextFromFile(buffer, mimeType)
+  const { text: extractedText, meta: textExtractionMeta } = await extractTextFromFile(buffer, mimeType)
   const extraction = await extractAdministrativeDocument(extractedText || "")
 
   const r2Key = inboxObjectKey(userId, file.name)
@@ -97,6 +98,9 @@ export async function uploadAndAnalyzeInboxItem(
       extractionConfidence:
         extraction.confidenceScore != null ? extraction.confidenceScore : null,
       rawExtraction: JSON.parse(JSON.stringify(extraction)) as Prisma.InputJsonValue,
+      textExtractionMeta: textExtractionMeta
+        ? (JSON.parse(JSON.stringify(textExtractionMeta)) as Prisma.InputJsonValue)
+        : undefined,
     },
   })
 
@@ -151,9 +155,12 @@ export async function getInboxItemContractSeed(itemId: string, userId: string) {
   }
 
   const text = item.extractedText?.trim() || ""
-  const extracted = await extractContractData(
+  const hadExtractableText = text.length > 100
+  const extractionOutcome = await extractContractData(
     text || "(Document administratif sans texte exploitable — vérification manuelle nécessaire.)"
   )
+  const extracted = extractionOutcome.data
+  const extractionWarning = userFacingExtractionWarning(extractionOutcome, hadExtractableText)
 
   return {
     sourceAdministrativeItemId: item.id,
@@ -165,6 +172,10 @@ export async function getInboxItemContractSeed(itemId: string, userId: string) {
     },
     extracted,
     extractedText: text,
+    ...(extractionWarning ? { extractionWarning } : {}),
+    ...(item.textExtractionMeta
+      ? { textExtractionMeta: item.textExtractionMeta as unknown as DocumentTextExtractionMetaV1 }
+      : {}),
   }
 }
 

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { getMortgagePlan } from "@/lib/services/mortgage"
 import { buildHouseholdCostInsights } from "@/lib/services/household-costs"
 import { getAppFeatures } from "@/lib/services/feature-flags"
+import { AGENT_ACTION_ROADMAP, buildContractDocumentContextBlock } from "@/lib/services/document-knowledge"
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 const MODEL = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet"
@@ -26,15 +27,17 @@ function detectLanguage(message: string): "fr" | "it" | "en" {
 function buildDefaultSystemPrompt() {
   return `Tu es l'assistant ContratBox, expert des contrats suisses (assurances, télécom, énergie, hypothèques, bail locatif, leasing, abonnements).
 Objectif:
-- Répondre précisément à partir des contrats du ménage.
+- Répondre précisément à partir des contrats du ménage (champs structurés + extraits de document quand fournis).
 - Expliquer clairement les couvertures, exclusions, clauses de résiliation et échéances.
 - Sur les hypothèques: calculer intérêts estimés, amortissement direct/indirect, coûts par tranche.
 - Sur les baux: expliquer loyer/charges, reconduction tacite, fenêtre de résiliation.
 - Proposer des pistes d'économies chiffrées quand possible.
+- Proposer des prochaines étapes concrètes (ex. vérifier une date, comparer une prime, préparer une résiliation) sans prétendre qu'une action a déjà été exécutée dans l'app sauf si c'est explicitement le cas.
 - Si une information manque, le dire explicitement et proposer quoi vérifier.
 - Ne jamais inventer de données non présentes.
 - Répondre dans la langue de la question de l'utilisateur: français, italien ou anglais.
-- Structurer les réponses de façon courte et actionnable.`
+- Structurer les réponses de façon courte et actionnable.
+- Feuille de route actions produit (pour formulations alignées, pas d'exécution implicite): ${AGENT_ACTION_ROADMAP.join(", ")}.`
 }
 
 function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseInsightsEnabled: boolean) {
@@ -55,6 +58,10 @@ function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseI
     const raw = c.rawExtraction && typeof c.rawExtraction === "object"
       ? (c.rawExtraction as Record<string, unknown>)
       : {}
+    const docBlock =
+      typeof c.extractedText === "string" && c.extractedText.trim().length > 0
+        ? `\n${buildContractDocumentContextBlock(c.extractedText, raw.documentTextMeta)}`
+        : ""
     const leaseContext =
       leaseInsightsEnabled && c.category === "rent_lease"
         ? [
@@ -103,6 +110,7 @@ function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseI
       clauses,
       leaseContext,
       mortgageContext,
+      docBlock,
     ]
       .filter(Boolean)
       .join("\n")
@@ -148,6 +156,7 @@ export async function POST(request: Request) {
           exclusions: true,
           importantClauses: true,
           rawExtraction: true,
+          extractedText: true,
         },
       },
     },

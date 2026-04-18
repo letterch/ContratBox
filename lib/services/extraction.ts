@@ -118,10 +118,20 @@ Réponds uniquement avec le JSON, rien d'autre.`
 }
 
 function parseModelJson(content: string): Record<string, unknown> {
-  const trimmed = content.trim()
+  const trimmed = content.trim().replace(/^\uFEFF/, "")
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = fenced ? fenced[1].trim() : trimmed
-  return JSON.parse(raw) as Record<string, unknown>
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    const start = raw.indexOf("{")
+    const end = raw.lastIndexOf("}")
+    if (start >= 0 && end > start) {
+      const slice = raw.slice(start, end + 1)
+      return JSON.parse(slice) as Record<string, unknown>
+    }
+    throw new Error("Impossible d'extraire un objet JSON de la réponse du modèle")
+  }
 }
 
 function parseNoticeTextToDays(text?: string | null): number | null {
@@ -186,13 +196,68 @@ function normalizeExtraction(input: Record<string, unknown>): ExtractedContractD
   return out
 }
 
-export async function extractContractData(text: string): Promise<ExtractedContractData> {
+/** Raison lorsque `data` ne contient aucune info utile (diagnostic UI / logs). */
+export type ContractExtractionFailureReason =
+  | "no_api_key"
+  | "api_error"
+  | "empty_model_reply"
+  | "json_parse_error"
+
+export type ContractExtractionOutcome = {
+  data: ExtractedContractData
+  failureReason?: ContractExtractionFailureReason
+}
+
+function hasUsefulExtractedFields(d: ExtractedContractData): boolean {
+  const candidates: unknown[] = [
+    d.provider,
+    d.title,
+    d.contractType,
+    d.monthlyPremium,
+    d.annualPremium,
+    d.policyNumber,
+    d.startDate,
+    d.keyCoverageSummary,
+  ]
+  return candidates.some((v) => v != null && v !== "")
+}
+
+/** Message court pour bannière UI après upload / inbox. */
+export function userFacingExtractionWarning(
+  outcome: ContractExtractionOutcome,
+  hadExtractableText: boolean
+): string | undefined {
+  if (outcome.failureReason) {
+    switch (outcome.failureReason) {
+      case "no_api_key":
+        return "L'extraction IA n'est pas configurée sur ce serveur (variable OPENROUTER_API_KEY). Vous pouvez compléter le formulaire manuellement."
+      case "api_error":
+        return "L'appel au service d'extraction a échoué (réseau, quota ou modèle). Réessayez plus tard ou saisissez le contrat à la main."
+      case "empty_model_reply":
+        return "Le modèle n'a renvoyé aucun texte exploitable. Réessayez ou complétez le formulaire manuellement."
+      case "json_parse_error":
+        return "La réponse du modèle n'a pas pu être interprétée. Réessayez ou complétez le formulaire manuellement."
+      default:
+        return "Extraction incomplète. Complétez le formulaire manuellement."
+    }
+  }
+  if (hadExtractableText && !hasUsefulExtractedFields(outcome.data)) {
+    return "Le PDF contient du texte mais aucun champ n'a été identifié avec certitude. Vérifiez le document (qualité du texte) ou saisissez les informations à la main."
+  }
+  if (!hadExtractableText && !hasUsefulExtractedFields(outcome.data)) {
+    return "Ce fichier semble être un scan ou une image sans texte sélectionnable : l'extraction automatique est limitée. Saisissez le contrat manuellement ou utilisez un PDF avec texte copiable."
+  }
+  return undefined
+}
+
+export async function extractContractData(text: string): Promise<ContractExtractionOutcome> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     console.warn("[extraction] OPENROUTER_API_KEY manquant")
-    return {}
+    return { data: {}, failureReason: "no_api_key" }
   }
   let lastError: unknown = null
+  let lastHadContent = false
   for (let attempt = 1; attempt <= 2; attempt++) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), EXTRACTION_TIMEOUT_MS)
@@ -207,7 +272,8 @@ export async function extractContractData(text: string): Promise<ExtractedContra
         body: JSON.stringify({
           model: MODEL,
           messages: [{ role: "user", content: buildExtractionPrompt(text) }],
-          max_tokens: 2000,
+          max_tokens: 4096,
+          temperature: 0,
         }),
         signal: controller.signal,
       })
@@ -218,8 +284,9 @@ export async function extractContractData(text: string): Promise<ExtractedContra
       const data = await res.json()
       const content = data?.choices?.[0]?.message?.content?.trim()
       if (!content) throw new Error("Réponse vide")
+      lastHadContent = true
       const parsed = parseModelJson(content)
-      return normalizeExtraction(parsed)
+      return { data: normalizeExtraction(parsed) }
     } catch (err) {
       lastError = err
       if (attempt < 2) await new Promise((r) => setTimeout(r, 1000))
@@ -228,5 +295,11 @@ export async function extractContractData(text: string): Promise<ExtractedContra
     }
   }
   console.error("[extraction]", lastError)
-  return {}
+  if (lastError instanceof Error && lastError.message === "Réponse vide") {
+    return { data: {}, failureReason: "empty_model_reply" }
+  }
+  return {
+    data: {},
+    failureReason: lastHadContent ? "json_parse_error" : "api_error",
+  }
 }

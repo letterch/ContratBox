@@ -167,6 +167,8 @@ model Document {
   r2Key      String   // clé dans R2
   r2Bucket   String?
   extractedText String? @db.Text
+  /// Provenance OCR / PDF natif, stats par page — pour RAG & agent futur
+  textExtractionMeta Json?
   createdAt  DateTime @default(now())
 
   contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
@@ -195,6 +197,7 @@ model AdministrativeItem {
   extractedText       String?  @db.Text
   extractionConfidence Decimal? @db.Decimal(5, 2)
   rawExtraction Json?
+  textExtractionMeta Json?
   convertedToContractId String?
   convertedAt DateTime?
 

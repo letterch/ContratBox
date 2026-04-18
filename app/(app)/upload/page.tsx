@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Upload, FileText, Check, ChevronRight, Sparkles, ArrowLeft } from "lucide-react"
+import { Upload, FileText, Check, ChevronRight, Sparkles, ArrowLeft, AlertTriangle } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { uploadAndExtractContract, saveContractFromUpload, getUploadPageData, getUploadSeedFromInbox } from "@/app/actions/contracts"
+import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
 import { CONTRACT_CATEGORIES, CONTRACT_CATEGORY_SLUGS } from "@/lib/constants"
 import type { SaveContractInput } from "@/app/actions/contracts"
 
@@ -19,6 +21,8 @@ type ExtractedState = {
   extracted: Record<string, unknown>
   extractedText: string
   file: { r2Key: string; name: string; mimeType: string; sizeBytes: number }
+  extractionWarning?: string
+  textExtractionMeta?: DocumentTextExtractionMetaV1
 }
 
 function ReviewStep({
@@ -106,6 +110,7 @@ function ReviewStep({
       exclusions: (e.exclusions as string) ?? null,
       importantClauses: (e.importantClauses as string) ?? null,
       rawExtraction: normalizedRawExtraction,
+      textExtractionMeta: extractedState.textExtractionMeta ?? null,
     })
   }
 
@@ -113,6 +118,14 @@ function ReviewStep({
   const isMortgage = category === "mortgage" || e.suggestedCategory === "mortgage"
   const isLease = category === "rent_lease" || e.suggestedCategory === "rent_lease"
   return (
+    <div className="flex flex-col gap-4">
+      {extractedState.extractionWarning ? (
+        <Alert className="rounded-2xl border-amber-500/40 bg-amber-500/5 text-foreground">
+          <AlertTriangle className="text-amber-600" />
+          <AlertTitle>Extraction automatique</AlertTitle>
+          <AlertDescription className="text-foreground/90">{extractedState.extractionWarning}</AlertDescription>
+        </Alert>
+      ) : null}
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div className="bg-card rounded-2xl border border-border shadow-card p-5">
         <div className="flex items-center justify-between mb-4">
@@ -268,6 +281,7 @@ function ReviewStep({
         </Button>
       </form>
     </div>
+    </div>
   )
 }
 
@@ -294,10 +308,14 @@ export default function UploadPage() {
     setSaveError("")
     getUploadSeedFromInbox(inboxId)
       .then((seed) => {
+        const seedWarning = "extractionWarning" in seed ? seed.extractionWarning : undefined
+        const seedMeta = "textExtractionMeta" in seed ? (seed as { textExtractionMeta?: DocumentTextExtractionMetaV1 }).textExtractionMeta : undefined
         setExtractedState({
           extracted: seed.extracted as Record<string, unknown>,
           extractedText: seed.extractedText,
           file: seed.file,
+          ...(typeof seedWarning === "string" && seedWarning ? { extractionWarning: seedWarning } : {}),
+          ...(seedMeta ? { textExtractionMeta: seedMeta } : {}),
         })
         setSourceAdministrativeItemId(seed.sourceAdministrativeItemId)
         setFileName(seed.file.name)
@@ -332,7 +350,15 @@ export default function UploadPage() {
       setStep("upload")
       return
     }
-    setExtractedState({ extracted: result.extracted as Record<string, unknown>, extractedText: result.extractedText, file: result.file })
+    setExtractedState({
+      extracted: result.extracted as Record<string, unknown>,
+      extractedText: result.extractedText,
+      file: result.file,
+      ...(result.extractionWarning ? { extractionWarning: result.extractionWarning } : {}),
+      ...("textExtractionMeta" in result && result.textExtractionMeta
+        ? { textExtractionMeta: result.textExtractionMeta }
+        : {}),
+    })
     setStep("review")
   }
 

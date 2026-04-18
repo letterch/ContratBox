@@ -6,18 +6,42 @@ import { FREE_CONTRACT_LIMIT } from "@/lib/constants"
 import { canAddContract, createContract } from "@/lib/services/contract"
 import { uploadDocument, documentKey, getStorageDebugConfig } from "@/lib/services/storage"
 import { extractTextFromFile } from "@/lib/services/ocr"
-import { extractContractData, type ExtractedContractData } from "@/lib/services/extraction"
+import {
+  extractContractData,
+  userFacingExtractionWarning,
+  type ExtractedContractData,
+} from "@/lib/services/extraction"
 import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
 import type { ContractCategorySlug } from "@/lib/constants"
 import { getContractById } from "@/lib/services/contract"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 import { getInboxItemContractSeed, markAdministrativeItemConverted } from "@/lib/services/administrative-inbox"
+import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
+import type { Prisma } from "@prisma/client"
+
+function mergeRawExtractionWithDocumentMeta(
+  raw: object | null | undefined,
+  meta: DocumentTextExtractionMetaV1 | null | undefined
+): Prisma.InputJsonValue | undefined {
+  if ((raw === null || raw === undefined) && !meta) return undefined
+  const base =
+    raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw)
+      ? { ...(raw as Record<string, unknown>) }
+      : {}
+  if (meta) base.documentTextMeta = meta as unknown as Record<string, unknown>
+  if (Object.keys(base).length === 0) return undefined
+  return JSON.parse(JSON.stringify(base)) as Prisma.InputJsonValue
+}
 
 export type UploadAndExtractResult = {
   ok: true
   extracted: ExtractedContractData
   extractedText: string
   file: { r2Key: string; name: string; mimeType: string; sizeBytes: number }
+  /** Avertissement lisible si l'extraction a échoué ou est vide malgré un PDF texte. */
+  extractionWarning?: string
+  /** Métadonnées OCR / PDF natif (stockées aussi sur Document et dans rawExtraction.documentTextMeta). */
+  textExtractionMeta?: DocumentTextExtractionMetaV1
 } | { ok: false; error: string }
 
 export async function uploadAndExtractContract(formData: FormData): Promise<UploadAndExtractResult> {
@@ -32,9 +56,11 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
   const buffer = Buffer.from(await file.arrayBuffer())
   const mimeType = file.type || "application/pdf"
 
-  const { text: extractedText, hadText } = await extractTextFromFile(buffer, mimeType)
+  const { text: extractedText, hadText, meta: textExtractionMeta } = await extractTextFromFile(buffer, mimeType)
   const textToExtract = extractedText || "(Document sans texte extrait — saisie manuelle recommandée.)"
-  const extracted = await extractContractData(textToExtract)
+  const extractionOutcome = await extractContractData(textToExtract)
+  const extracted = extractionOutcome.data
+  const extractionWarning = userFacingExtractionWarning(extractionOutcome, hadText)
 
   const r2Key = documentKey(session.user.id, "draft", file.name)
   try {
@@ -60,6 +86,8 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
     extracted,
     extractedText: extractedText || "",
     file: { r2Key, name: file.name, mimeType, sizeBytes: file.size },
+    ...(extractionWarning ? { extractionWarning } : {}),
+    ...(textExtractionMeta ? { textExtractionMeta } : {}),
   }
 }
 
@@ -90,6 +118,7 @@ export type SaveContractInput = {
   exclusions?: string | null
   importantClauses?: string | null
   rawExtraction?: object | null
+  textExtractionMeta?: DocumentTextExtractionMetaV1 | null
 }
 
 export async function saveContractFromUpload(data: SaveContractInput) {
@@ -105,6 +134,7 @@ export async function saveContractFromUpload(data: SaveContractInput) {
   if (!household) throw new Error("Aucun ménage trouvé")
 
   const raw = (data.rawExtraction as Record<string, unknown> | null) ?? null
+  const rawExtractionForDb = mergeRawExtractionWithDocumentMeta(data.rawExtraction ?? undefined, data.textExtractionMeta ?? undefined)
   const startDate = data.startDate ? new Date(data.startDate) : null
   const renewalDate = data.renewalDate ? new Date(data.renewalDate) : null
   const endDate = data.endDate ? new Date(data.endDate) : null
@@ -165,8 +195,12 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       coverageSummary: data.coverageSummary ?? null,
       exclusions: data.exclusions ?? null,
       importantClauses: data.importantClauses ?? null,
-      rawExtraction: data.rawExtraction ? (data.rawExtraction as unknown as Parameters<typeof prisma.contract.create>[0]["data"]["rawExtraction"]) : undefined,
-      extractedAt: data.rawExtraction ? new Date() : null,
+      ...(rawExtractionForDb !== undefined
+        ? {
+            rawExtraction: rawExtractionForDb as Parameters<typeof prisma.contract.create>[0]["data"]["rawExtraction"],
+            extractedAt: new Date(),
+          }
+        : { extractedAt: null }),
     },
   })
 
@@ -178,6 +212,9 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       sizeBytes: data.file.sizeBytes,
       r2Key: data.file.r2Key,
       extractedText: data.extractedText ?? null,
+      textExtractionMeta: data.textExtractionMeta
+        ? (JSON.parse(JSON.stringify(data.textExtractionMeta)) as Prisma.InputJsonValue)
+        : undefined,
     },
   })
 
