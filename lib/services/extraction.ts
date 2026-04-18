@@ -51,7 +51,43 @@ export type ExtractedContractData = {
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 const MODEL = process.env.OPENROUTER_MODEL ?? "anthropic/claude-3.5-sonnet"
-const EXTRACTION_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 30000)
+/** Après OCR, le prompt peut être long ; 60s par défaut sur hébergement. */
+const EXTRACTION_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
+
+function sanitizeOpenRouterHint(message: string): string {
+  let m = message.slice(0, 500)
+  m = m.replace(/sk-or-v1-[a-z0-9]+/gi, "[clé]")
+  m = m.replace(/Bearer\s+[^\s]+/gi, "Bearer [clé]")
+  return m
+}
+
+function humanHintFromOpenRouterError(message: string): string | null {
+  if (message.includes("OpenRouter error: 401")) {
+    return "OpenRouter a refusé la clé (401). Vérifiez OPENROUTER_API_KEY sur Railway et régénérez la clé sur openrouter.ai si besoin."
+  }
+  if (message.includes("OpenRouter error: 402")) {
+    return "OpenRouter signale un problème de crédit ou de facturation (402). Ajoutez du crédit sur votre compte OpenRouter."
+  }
+  if (message.includes("OpenRouter error: 403")) {
+    return "OpenRouter a refusé l’accès (403). Vérifiez les restrictions du compte ou de la clé."
+  }
+  if (message.includes("OpenRouter error: 429")) {
+    return "Trop de requêtes vers OpenRouter (429). Patientez quelques minutes ou changez de modèle."
+  }
+  if (message.includes("OpenRouter error: 400")) {
+    return "Requête rejetée par OpenRouter (400), souvent un identifiant de modèle invalide. Vérifiez OPENROUTER_MODEL (liste sur openrouter.ai/models), par ex. anthropic/claude-3.5-haiku."
+  }
+  if (message.includes("OpenRouter error: 404")) {
+    return "Modèle introuvable sur OpenRouter (404). Mettez à jour OPENROUTER_MODEL vers un modèle actif."
+  }
+  if (/AbortError|aborted|signal/i.test(message)) {
+    return "Délai d’attente dépassé vers OpenRouter. Sur Railway, augmentez OPENROUTER_TIMEOUT_MS (ex. 120000) ou réduisez OCR_MAX_PDF_PAGES si l’OCR est lent."
+  }
+  if (/fetch failed|ECONNRESET|ENOTFOUND|ETIMEDOUT|socket/i.test(message)) {
+    return "Le serveur n’a pas pu joindre OpenRouter (réseau). Vérifiez que le service a bien l’accès sortant HTTPS."
+  }
+  return null
+}
 
 function buildExtractionPrompt(text: string): string {
   const categoriesList = Object.entries(CONTRACT_CATEGORIES)
@@ -206,6 +242,8 @@ export type ContractExtractionFailureReason =
 export type ContractExtractionOutcome = {
   data: ExtractedContractData
   failureReason?: ContractExtractionFailureReason
+  /** Détail technique sanitisé (logs UI / support), jamais la clé API. */
+  failureHint?: string
 }
 
 function hasUsefulExtractedFields(d: ExtractedContractData): boolean {
@@ -231,8 +269,11 @@ export function userFacingExtractionWarning(
     switch (outcome.failureReason) {
       case "no_api_key":
         return "L'extraction IA n'est pas configurée sur ce serveur (variable OPENROUTER_API_KEY). Vous pouvez compléter le formulaire manuellement."
-      case "api_error":
-        return "L'appel au service d'extraction a échoué (réseau, quota ou modèle). Réessayez plus tard ou saisissez le contrat à la main."
+      case "api_error": {
+        const specific = outcome.failureHint ? humanHintFromOpenRouterError(outcome.failureHint) : null
+        if (specific) return `${specific} Sinon, complétez le formulaire à la main.`
+        return "L'appel au service d'extraction (OpenRouter) a échoué. Vérifiez OPENROUTER_API_KEY, les crédits OpenRouter et OPENROUTER_MODEL. Réessayez plus tard ou saisissez le contrat à la main."
+      }
       case "empty_model_reply":
         return "Le modèle n'a renvoyé aucun texte exploitable. Réessayez ou complétez le formulaire manuellement."
       case "json_parse_error":
@@ -268,6 +309,7 @@ export async function extractContractData(text: string): Promise<ContractExtract
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
           "HTTP-Referer": process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "http://localhost:3000",
+          "X-Title": "ContratBox extraction contrat",
         },
         body: JSON.stringify({
           model: MODEL,
@@ -295,11 +337,14 @@ export async function extractContractData(text: string): Promise<ContractExtract
     }
   }
   console.error("[extraction]", lastError)
+  const hint =
+    lastError instanceof Error ? sanitizeOpenRouterHint(lastError.message) : sanitizeOpenRouterHint(String(lastError))
   if (lastError instanceof Error && lastError.message === "Réponse vide") {
-    return { data: {}, failureReason: "empty_model_reply" }
+    return { data: {}, failureReason: "empty_model_reply", failureHint: hint }
   }
   return {
     data: {},
     failureReason: lastHadContent ? "json_parse_error" : "api_error",
+    failureHint: hint || undefined,
   }
 }
