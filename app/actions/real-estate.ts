@@ -280,6 +280,40 @@ export async function deleteMortgageTrancheAction(formData: FormData) {
   revalidatePath("/real-estate")
 }
 
+export async function updateMortgageTrancheAction(formData: FormData) {
+  const { householdId } = await requireOwnerHousehold()
+  const trancheId = String(formData.get("trancheId") ?? "")
+  const tranche = await prisma.mortgageTranche.findFirst({
+    where: { id: trancheId },
+    include: { mortgageLoan: { include: { realEstateProperty: true } } },
+  })
+  if (!tranche || tranche.mortgageLoan.realEstateProperty.householdId !== householdId) {
+    throw new Error("Tranche introuvable")
+  }
+
+  const nameRaw = String(formData.get("name") ?? "").trim()
+  const principal = Number(formData.get("principal") ?? 0)
+  const ratePct = Number(formData.get("ratePct") ?? 0)
+  const rateType = toRateType(formData.get("rateType"))
+  const endDateRaw = String(formData.get("endDate") ?? "").trim()
+  const startDateRaw = String(formData.get("startDate") ?? "").trim()
+
+  await prisma.mortgageTranche.update({
+    where: { id: trancheId },
+    data: {
+      name: nameRaw || null,
+      principal: principal > 0 ? principal : 0,
+      ratePct: ratePct >= 0 ? ratePct : 0,
+      rateType,
+      startDate: startDateRaw ? new Date(startDateRaw) : null,
+      endDate: endDateRaw ? new Date(endDateRaw) : null,
+    },
+  })
+
+  revalidatePath(`/real-estate/${tranche.mortgageLoan.realEstatePropertyId}/financing`)
+  revalidatePath("/real-estate")
+}
+
 export async function addPropertyChargeAction(formData: FormData) {
   const { householdId } = await requireOwnerHousehold()
   const propertyId = String(formData.get("propertyId") ?? "")

@@ -4,9 +4,11 @@ import { Button } from "@/components/ui/button"
 import {
   addMortgageTrancheAction,
   createMortgageLoanAction,
+  deleteMortgageTrancheAction,
   getPropertySimulation,
   getRealEstatePropertyDetail,
   syncMortgageMaturityTasksAction,
+  updateMortgageTrancheAction,
   updateRealEstatePropertyAction,
 } from "@/app/actions/real-estate"
 
@@ -100,10 +102,25 @@ export default async function PropertyFinancingPage({
             <ul className="text-sm flex flex-col gap-1">
               {loan.tranches.map((t) => (
                 <li key={t.id} className="flex items-center justify-between rounded-xl border border-border/60 px-3 py-2">
-                  <span>
-                    {t.name ?? "Tranche"} · CHF {Number(t.principal).toLocaleString("fr-CH")} · {Number(t.ratePct)}% · {t.rateType} ·
-                    échéance {t.endDate ? t.endDate.toISOString().slice(0, 10) : "—"}
-                  </span>
+                  <form action={updateMortgageTrancheAction} className="w-full grid grid-cols-1 md:grid-cols-6 gap-2 items-center">
+                    <input type="hidden" name="trancheId" value={t.id} />
+                    <input name="name" defaultValue={t.name ?? ""} placeholder="Tranche" className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs" />
+                    <input name="principal" type="number" step="0.01" defaultValue={Number(t.principal)} className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs" />
+                    <select name="rateType" defaultValue={t.rateType} className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs">
+                      <option value="fixed">Fixe</option>
+                      <option value="saron">SARON</option>
+                    </select>
+                    <input name="ratePct" type="number" step="0.0001" defaultValue={Number(t.ratePct)} className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs" />
+                    <input name="endDate" type="date" defaultValue={t.endDate ? t.endDate.toISOString().slice(0, 10) : ""} className="rounded-xl border border-border bg-background px-3 py-1.5 text-xs" />
+                    <div className="flex gap-2">
+                      <Button type="submit" size="sm" variant="outline" className="rounded-xl h-7 text-xs">
+                        Modifier
+                      </Button>
+                      <Button formAction={deleteMortgageTrancheAction} name="trancheId" value={t.id} type="submit" size="sm" variant="destructive" className="rounded-xl h-7 text-xs">
+                        Supprimer
+                      </Button>
+                    </div>
+                  </form>
                 </li>
               ))}
             </ul>
