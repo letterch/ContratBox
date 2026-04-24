@@ -15,6 +15,8 @@ export type PropertyChargeInput = {
 export type MortgageCostBreakdown = {
   monthlyInterest: number
   monthlyAmortization: number
+  monthlyAmortizationDirect: number
+  monthlyAmortizationIndirect: number
   monthlyMortgageTotal: number
   monthlyAdditionalCharges: number
   monthlyTotal: number
@@ -39,21 +41,28 @@ export function toMonthlyAmount(amount: number, frequency: Frequency): number {
  * amortissement mensuel = dette * tauxAmortissement / 100 / 4 / 3
  */
 export function computeMortgageCharges(input: {
-  tranches: MortgageTrancheInput[]
-  amortizationRatePct: number
+  mortgageTranches: MortgageTrancheInput[]
+  amortizationEntries: Array<{
+    principal: number
+    ratePct: number
+    mode?: "direct" | "indirect"
+  }>
   additionalCharges?: PropertyChargeInput[]
 }): MortgageCostBreakdown {
-  const amortizationRatePct = Math.max(0, safeNumber(input.amortizationRatePct))
-  const tranches = input.tranches.filter((t) => t.principal > 0 && t.ratePct >= 0)
+  const mortgageTranches = input.mortgageTranches.filter((t) => t.principal > 0 && t.ratePct >= 0)
+  const amortizationEntries = input.amortizationEntries.filter((a) => a.principal > 0 && a.ratePct >= 0)
 
-  const monthlyInterest = tranches.reduce(
+  const monthlyInterest = mortgageTranches.reduce(
     (sum, t) => sum + (safeNumber(t.principal) * safeNumber(t.ratePct)) / 100 / 4 / 3,
     0
   )
-  const monthlyAmortization = tranches.reduce(
-    (sum, t) => sum + (safeNumber(t.principal) * amortizationRatePct) / 100 / 4 / 3,
-    0
-  )
+  const monthlyAmortizationDirect = amortizationEntries
+    .filter((a) => (a.mode ?? "direct") === "direct")
+    .reduce((sum, a) => sum + (safeNumber(a.principal) * safeNumber(a.ratePct)) / 100 / 4 / 3, 0)
+  const monthlyAmortizationIndirect = amortizationEntries
+    .filter((a) => (a.mode ?? "direct") === "indirect")
+    .reduce((sum, a) => sum + (safeNumber(a.principal) * safeNumber(a.ratePct)) / 100 / 4 / 3, 0)
+  const monthlyAmortization = monthlyAmortizationDirect + monthlyAmortizationIndirect
   const monthlyAdditionalCharges = (input.additionalCharges ?? []).reduce(
     (sum, c) => sum + toMonthlyAmount(c.amount, c.frequency),
     0
@@ -63,6 +72,8 @@ export function computeMortgageCharges(input: {
   return {
     monthlyInterest,
     monthlyAmortization,
+    monthlyAmortizationDirect,
+    monthlyAmortizationIndirect,
     monthlyMortgageTotal,
     monthlyAdditionalCharges,
     monthlyTotal,

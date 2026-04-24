@@ -26,7 +26,7 @@ export function computeYieldSummary(input: {
   rents: RentRow[]
   payments: RentPaymentRow[]
   mortgageTranches: Array<{ principal: number; ratePct: number; rateType: "fixed" | "saron" }>
-  amortizationRatePct: number
+  amortizationEntries: Array<{ principal: number; ratePct: number; mode?: "direct" | "indirect" }>
   extraCharges: Array<{ amount: number; frequency: Frequency }>
 }): YieldSummary {
   const monthlyRentalPotential = input.rents
@@ -38,8 +38,8 @@ export function computeYieldSummary(input: {
     input.payments.length > 0 ? monthlyRentalReceivedRaw / Math.max(1, input.payments.length) : monthlyRentalPotential
 
   const finance = computeMortgageCharges({
-    tranches: input.mortgageTranches,
-    amortizationRatePct: input.amortizationRatePct,
+    mortgageTranches: input.mortgageTranches,
+    amortizationEntries: input.amortizationEntries,
     additionalCharges: input.extraCharges,
   })
 

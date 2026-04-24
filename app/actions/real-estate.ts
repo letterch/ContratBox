@@ -13,6 +13,61 @@ function toRateType(value: unknown): "fixed" | "saron" {
   return String(value ?? "").toLowerCase() === "saron" ? "saron" : "fixed"
 }
 
+function toAmortizationMode(value: unknown): "direct" | "indirect" {
+  return String(value ?? "").toLowerCase() === "indirect" ? "indirect" : "direct"
+}
+
+function buildFinanceInputs(loans: Array<{
+  loanKind: string
+  amortizationMode: string
+  principalTotal: { toString(): string } | number
+  amortizationRatePct: { toString(): string } | number
+  tranches: Array<{ principal: { toString(): string } | number; ratePct: { toString(): string } | number; rateType: string }>
+}>) {
+  const mortgageLoans = loans.filter((l) => l.loanKind !== "amortization")
+  const amortizationLoans = loans.filter((l) => l.loanKind === "amortization")
+
+  const mortgageTranches = mortgageLoans.flatMap((l) =>
+    l.tranches.map((t) => ({
+      principal: Number(t.principal),
+      ratePct: Number(t.ratePct),
+      rateType: toRateType(t.rateType),
+    }))
+  )
+
+  const amortizationEntriesFromLoans = amortizationLoans.flatMap((l) => {
+    if (l.tranches.length > 0) {
+      return l.tranches.map((t) => ({
+        principal: Number(t.principal),
+        ratePct: Number(t.ratePct),
+        mode: toAmortizationMode(l.amortizationMode),
+      }))
+    }
+    return [
+      {
+        principal: Number(l.principalTotal),
+        ratePct: Number(l.amortizationRatePct),
+        mode: toAmortizationMode(l.amortizationMode),
+      },
+    ]
+  })
+
+  // Fallback MVP: si aucun prêt d'amortissement dédié, appliquer le taux générique des prêts hypothécaires.
+  const amortizationEntriesFallback =
+    amortizationEntriesFromLoans.length === 0
+      ? mortgageLoans.map((l) => ({
+          principal: Number(l.principalTotal),
+          ratePct: Number(l.amortizationRatePct),
+          mode: "direct" as const,
+        }))
+      : []
+
+  return {
+    mortgageTranches,
+    amortizationEntries: [...amortizationEntriesFromLoans, ...amortizationEntriesFallback],
+  }
+}
+
 export async function getRealEstateOverview() {
   const session = await auth()
   if (!session?.user?.id) return null
@@ -32,17 +87,10 @@ export async function getRealEstateOverview() {
   let monthlyIncome = 0
   let monthlyCharges = 0
   const rows = properties.map((p) => {
-    const tranches = p.mortgageLoans.flatMap((l) =>
-      l.tranches.map((t) => ({
-        principal: Number(t.principal),
-        ratePct: Number(t.ratePct),
-        rateType: toRateType(t.rateType),
-      }))
-    )
-    const amortizationRate = p.mortgageLoans[0] ? Number(p.mortgageLoans[0].amortizationRatePct) : 1.25
+    const financeInputs = buildFinanceInputs(p.mortgageLoans)
     const finance = computeMortgageCharges({
-      tranches,
-      amortizationRatePct: amortizationRate,
+      mortgageTranches: financeInputs.mortgageTranches,
+      amortizationEntries: financeInputs.amortizationEntries,
       additionalCharges: p.charges.map((c) => ({
         amount: Number(c.amount),
         frequency: c.frequency as "monthly" | "quarterly" | "annual",
@@ -160,12 +208,16 @@ export async function createMortgageLoanAction(formData: FormData) {
   const principalTotal = Number(formData.get("principalTotal") ?? 0)
   const amortizationRatePct = Number(formData.get("amortizationRatePct") ?? 1.25)
   const label = String(formData.get("label") ?? "Dette hypothécaire")
+  const loanKind = String(formData.get("loanKind") ?? "mortgage") === "amortization" ? "amortization" : "mortgage"
+  const amortizationMode = toAmortizationMode(formData.get("amortizationMode"))
   const property = await prisma.realEstateProperty.findFirst({ where: { id: propertyId, householdId } })
   if (!property) throw new Error("Bien introuvable")
   await prisma.mortgageLoan.create({
     data: {
       realEstatePropertyId: propertyId,
       label: label || "Dette hypothécaire",
+      loanKind,
+      amortizationMode,
       principalTotal: principalTotal > 0 ? principalTotal : 0,
       amortizationRatePct: amortizationRatePct > 0 ? amortizationRatePct : 1.25,
     },
@@ -335,17 +387,10 @@ export async function generateChargeStatementAction(formData: FormData) {
     },
   })
   if (!property) throw new Error("Bien introuvable")
-  const tranches = property.mortgageLoans.flatMap((l) =>
-    l.tranches.map((t) => ({
-      principal: Number(t.principal),
-      ratePct: Number(t.ratePct),
-      rateType: toRateType(t.rateType),
-    }))
-  )
-  const amortizationRatePct = property.mortgageLoans[0] ? Number(property.mortgageLoans[0].amortizationRatePct) : 1.25
+  const financeInputs = buildFinanceInputs(property.mortgageLoans)
   const finance = computeMortgageCharges({
-    tranches,
-    amortizationRatePct,
+    mortgageTranches: financeInputs.mortgageTranches,
+    amortizationEntries: financeInputs.amortizationEntries,
     additionalCharges: property.charges.map((c) => ({
       amount: Number(c.amount),
       frequency: c.frequency as "monthly" | "quarterly" | "annual",
@@ -406,19 +451,22 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
     },
   })
   if (!property) return null
-  const tranches = property.mortgageLoans.flatMap((l) =>
-    l.tranches.map((t) => ({
-      id: t.id,
-      name: t.name,
-      principal: Number(t.principal),
-      ratePct: Number(t.ratePct),
-      rateType: toRateType(t.rateType),
-      endDate: t.endDate,
-    }))
-  )
+  const tranches = property.mortgageLoans
+    .filter((l) => l.loanKind !== "amortization")
+    .flatMap((l) =>
+      l.tranches.map((t) => ({
+        id: t.id,
+        name: t.name,
+        principal: Number(t.principal),
+        ratePct: Number(t.ratePct),
+        rateType: toRateType(t.rateType),
+        endDate: t.endDate,
+      }))
+    )
+  const financeInputs = buildFinanceInputs(property.mortgageLoans)
   const finance = computeMortgageCharges({
-    tranches,
-    amortizationRatePct: property.mortgageLoans[0] ? Number(property.mortgageLoans[0].amortizationRatePct) : 1.25,
+    mortgageTranches: financeInputs.mortgageTranches,
+    amortizationEntries: financeInputs.amortizationEntries,
     additionalCharges: property.charges.map((c) => ({
       amount: Number(c.amount),
       frequency: c.frequency as "monthly" | "quarterly" | "annual",
@@ -443,7 +491,7 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
       ratePct: t.ratePct,
       rateType: toRateType(t.rateType),
     })),
-    amortizationRatePct: property.mortgageLoans[0] ? Number(property.mortgageLoans[0].amortizationRatePct) : 1.25,
+    amortizationEntries: financeInputs.amortizationEntries,
     extraCharges: property.charges.map((c) => ({
       amount: Number(c.amount),
       frequency: c.frequency as "monthly" | "quarterly" | "annual",
@@ -456,17 +504,18 @@ export async function getPropertySimulation(propertyId: string, rateDeltaPct: nu
   const detail = await getRealEstatePropertyDetail(propertyId)
   if (!detail) return null
   const delta = Number.isFinite(rateDeltaPct) ? rateDeltaPct : 0
-  const tranches = detail.property.mortgageLoans.flatMap((l) =>
-    l.tranches.map((t) => ({
-      principal: Number(t.principal),
-      ratePct: Number(t.ratePct) + delta,
-      rateType: toRateType(t.rateType),
+  const financeInputs = buildFinanceInputs(
+    detail.property.mortgageLoans.map((l) => ({
+      ...l,
+      tranches: l.tranches.map((t) => ({
+        ...t,
+        ratePct: l.loanKind === "amortization" ? t.ratePct : Number(t.ratePct) + delta,
+      })),
     }))
   )
-  const amortizationRatePct = detail.property.mortgageLoans[0] ? Number(detail.property.mortgageLoans[0].amortizationRatePct) : 1.25
   const simulation = computeMortgageCharges({
-    tranches,
-    amortizationRatePct,
+    mortgageTranches: financeInputs.mortgageTranches,
+    amortizationEntries: financeInputs.amortizationEntries,
     additionalCharges: detail.property.charges.map((c) => ({
       amount: Number(c.amount),
       frequency: c.frequency as "monthly" | "quarterly" | "annual",

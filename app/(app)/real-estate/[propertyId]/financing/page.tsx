@@ -64,6 +64,14 @@ export default async function PropertyFinancingPage({
           <form action={createMortgageLoanAction} className="grid grid-cols-1 md:grid-cols-4 gap-2">
             <input type="hidden" name="propertyId" value={propertyId} />
             <input name="label" placeholder="Label prêt" defaultValue="Dette hypothécaire" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+            <select name="loanKind" defaultValue="mortgage" className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
+              <option value="mortgage">Dette hypothécaire (intérêts)</option>
+              <option value="amortization">Amortissement</option>
+            </select>
+            <select name="amortizationMode" defaultValue="direct" className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
+              <option value="direct">Amortissement direct</option>
+              <option value="indirect">Amortissement indirect</option>
+            </select>
             <input name="principalTotal" type="number" step="0.01" placeholder="Dette totale CHF" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <input name="amortizationRatePct" type="number" step="0.0001" defaultValue="1.25" placeholder="Taux amortissement %" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <Button type="submit" className="rounded-xl">Créer le prêt</Button>
@@ -74,7 +82,8 @@ export default async function PropertyFinancingPage({
           <div key={loan.id} className="bg-card rounded-2xl border border-border p-4">
             <h3 className="font-semibold text-sm">{loan.label}</h3>
             <p className="text-xs text-muted-foreground mb-3">
-              Dette CHF {Number(loan.principalTotal).toLocaleString("fr-CH")} · Amortissement {Number(loan.amortizationRatePct)}%
+              {loan.loanKind === "amortization" ? "Amortissement" : "Hypothèque"} · Dette CHF {Number(loan.principalTotal).toLocaleString("fr-CH")} ·
+              Taux par défaut {Number(loan.amortizationRatePct)}% · {loan.amortizationMode}
             </p>
             <form action={addMortgageTrancheAction} className="grid grid-cols-1 md:grid-cols-6 gap-2 mb-4">
               <input type="hidden" name="loanId" value={loan.id} />
@@ -107,12 +116,29 @@ export default async function PropertyFinancingPage({
             <p className="text-lg font-semibold">CHF {detail.finance.monthlyTotal.toLocaleString("fr-CH")}</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">
+            <p className="text-xs text-muted-foreground">Intérêts mensuels (hypothèque)</p>
+            <p className="text-lg font-semibold">CHF {detail.finance.monthlyInterest.toLocaleString("fr-CH")}</p>
+          </div>
+          <div className="bg-card rounded-2xl border border-border p-4">
+            <p className="text-xs text-muted-foreground">Amortissement mensuel total</p>
+            <p className="text-lg font-semibold">CHF {detail.finance.monthlyAmortization.toLocaleString("fr-CH")}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Simulation taux +0.50%</p>
             <p className="text-lg font-semibold">CHF {(simulationUp?.monthlyTotal ?? 0).toLocaleString("fr-CH")}</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Simulation taux -0.50%</p>
             <p className="text-lg font-semibold">CHF {(simulationDown?.monthlyTotal ?? 0).toLocaleString("fr-CH")}</p>
+          </div>
+          <div className="bg-card rounded-2xl border border-border p-4">
+            <p className="text-xs text-muted-foreground">Amort. direct / indirect</p>
+            <p className="text-lg font-semibold">
+              CHF {detail.finance.monthlyAmortizationDirect.toLocaleString("fr-CH")} / CHF{" "}
+              {detail.finance.monthlyAmortizationIndirect.toLocaleString("fr-CH")}
+            </p>
           </div>
         </div>
         <div className="bg-card rounded-2xl border border-border p-4 flex items-center justify-between">

@@ -7,11 +7,14 @@ export function runFinanceUnitTests() {
   assert.equal(toMonthlyAmount(100, "monthly"), 100)
 
   const result = computeMortgageCharges({
-    tranches: [
+    mortgageTranches: [
       { principal: 500_000, ratePct: 1.8, rateType: "fixed" },
       { principal: 200_000, ratePct: 2.2, rateType: "saron" },
     ],
-    amortizationRatePct: 1.25,
+    amortizationEntries: [
+      { principal: 500_000, ratePct: 1.25, mode: "direct" },
+      { principal: 200_000, ratePct: 1.25, mode: "direct" },
+    ],
     additionalCharges: [{ amount: 2400, frequency: "annual" }],
   })
 
@@ -20,6 +23,8 @@ export function runFinanceUnitTests() {
   const expectedAmortization = (500_000 * 1.25) / 100 / 4 / 3 + (200_000 * 1.25) / 100 / 4 / 3
   assert.ok(Math.abs(result.monthlyInterest - expectedInterest) < 1e-6)
   assert.ok(Math.abs(result.monthlyAmortization - expectedAmortization) < 1e-6)
+  assert.ok(Math.abs(result.monthlyAmortizationDirect - expectedAmortization) < 1e-6)
+  assert.equal(result.monthlyAmortizationIndirect, 0)
   assert.equal(result.monthlyAdditionalCharges, 200)
   assert.equal(result.quarterlyTotal, result.monthlyTotal * 3)
   assert.equal(result.annualTotal, result.monthlyTotal * 12)

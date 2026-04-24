@@ -279,6 +279,8 @@ model MortgageLoan {
   id                  String   @id @default(cuid())
   realEstatePropertyId String
   label               String   @default("Dette hypothécaire")
+  loanKind            String   @default("mortgage") // mortgage | amortization
+  amortizationMode    String   @default("direct") // direct | indirect (utile si loanKind=amortization)
   principalTotal      Decimal  @db.Decimal(14, 2)
   amortizationRatePct Decimal  @default(1.25) @db.Decimal(6, 4)
   createdAt           DateTime @default(now())
