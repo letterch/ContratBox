@@ -82,6 +82,7 @@ export type CreateHouseholdTaskInput = {
   priority?: HouseholdTaskPriority
   dueDate?: Date | null
   contractId?: string | null
+  realEstatePropertyId?: string | null
   assignedToMemberId?: string | null
   sourceAdministrativeItemId?: string | null
 }
@@ -94,6 +95,13 @@ export async function createHouseholdTask(input: CreateHouseholdTaskInput) {
       select: { id: true },
     })
     if (!c) throw new Error("Contrat invalide pour ce ménage")
+  }
+  if (input.realEstatePropertyId) {
+    const p = await prisma.realEstateProperty.findFirst({
+      where: { id: input.realEstatePropertyId, householdId: input.householdId },
+      select: { id: true },
+    })
+    if (!p) throw new Error("Bien immobilier invalide pour ce ménage")
   }
   if (input.assignedToMemberId) {
     const m = await prisma.householdMember.findFirst({
@@ -124,6 +132,7 @@ export async function createHouseholdTask(input: CreateHouseholdTaskInput) {
       priority: input.priority ?? "medium",
       dueDate: input.dueDate ?? null,
       contractId: input.contractId ?? null,
+      realEstatePropertyId: input.realEstatePropertyId ?? null,
       assignedToMemberId: input.assignedToMemberId ?? null,
       sourceAdministrativeItemId: input.sourceAdministrativeItemId ?? null,
     },

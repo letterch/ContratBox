@@ -81,6 +81,7 @@ model Household {
   owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members HouseholdMember[]
   contracts Contract[]
+  realEstateProperties RealEstateProperty[]
   tasks HouseholdTask[]
   administrativeItems AdministrativeItem[]
 }
@@ -229,6 +230,7 @@ model HouseholdTask {
   dueDate DateTime? @db.Date
 
   contractId         String?
+  realEstatePropertyId String?
   documentId         String?
   assignedToMemberId String?
 
@@ -241,13 +243,137 @@ model HouseholdTask {
   household  Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
   createdBy  User             @relation("HouseholdTaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
   contract   Contract?        @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  realEstateProperty RealEstateProperty? @relation(fields: [realEstatePropertyId], references: [id], onDelete: SetNull)
   document   Document?        @relation(fields: [documentId], references: [id], onDelete: SetNull)
   assignedTo HouseholdMember? @relation("HouseholdTaskAssignee", fields: [assignedToMemberId], references: [id], onDelete: SetNull)
   sourceAdministrativeItem AdministrativeItem? @relation(fields: [sourceAdministrativeItemId], references: [id], onDelete: SetNull)
 
   @@index([householdId, status])
   @@index([createdById])
+  @@index([realEstatePropertyId])
   @@index([sourceAdministrativeItemId])
+}
+
+// ——— Immobilier locatif (MVP) ———
+model RealEstateProperty {
+  id          String   @id @default(cuid())
+  householdId String
+  name        String
+  address     String?
+  propertyType String  @default("apartment") // apartment | house | mixed | commercial | other
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  mortgageLoans MortgageLoan[]
+  leases LeaseUnit[]
+  charges PropertyCharge[]
+  chargeStatements ChargeStatement[]
+  tasks HouseholdTask[]
+
+  @@index([householdId, isActive])
+}
+
+model MortgageLoan {
+  id                  String   @id @default(cuid())
+  realEstatePropertyId String
+  label               String   @default("Dette hypothécaire")
+  principalTotal      Decimal  @db.Decimal(14, 2)
+  amortizationRatePct Decimal  @default(1.25) @db.Decimal(6, 4)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  realEstateProperty RealEstateProperty @relation(fields: [realEstatePropertyId], references: [id], onDelete: Cascade)
+  tranches MortgageTranche[]
+
+  @@index([realEstatePropertyId])
+}
+
+model MortgageTranche {
+  id             String   @id @default(cuid())
+  mortgageLoanId String
+  name           String?
+  principal      Decimal  @db.Decimal(14, 2)
+  rateType       String   @default("fixed") // fixed | saron
+  ratePct        Decimal  @db.Decimal(6, 4)
+  startDate      DateTime? @db.Date
+  endDate        DateTime? @db.Date
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  mortgageLoan MortgageLoan @relation(fields: [mortgageLoanId], references: [id], onDelete: Cascade)
+
+  @@index([mortgageLoanId])
+  @@index([endDate])
+}
+
+model PropertyCharge {
+  id                  String   @id @default(cuid())
+  realEstatePropertyId String
+  label               String
+  chargeType          String   @default("other") // ppe | maintenance | insurance | utilities | tax | other
+  amount              Decimal  @db.Decimal(12, 2)
+  frequency           String   @default("monthly") // monthly | quarterly | annual
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  realEstateProperty RealEstateProperty @relation(fields: [realEstatePropertyId], references: [id], onDelete: Cascade)
+
+  @@index([realEstatePropertyId])
+}
+
+model LeaseUnit {
+  id                  String   @id @default(cuid())
+  realEstatePropertyId String
+  label               String   @default("Lot principal")
+  tenantName          String?
+  isRented            Boolean  @default(false)
+  rentMonthly         Decimal  @default(0) @db.Decimal(12, 2)
+  chargesMonthly      Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  realEstateProperty RealEstateProperty @relation(fields: [realEstatePropertyId], references: [id], onDelete: Cascade)
+  rentPayments RentPayment[]
+
+  @@index([realEstatePropertyId, isRented])
+}
+
+model RentPayment {
+  id         String   @id @default(cuid())
+  leaseUnitId String
+  month      DateTime @db.Date // utiliser le 1er du mois
+  expectedAmount Decimal @db.Decimal(12, 2)
+  receivedAmount Decimal @default(0) @db.Decimal(12, 2)
+  status     String   @default("pending") // pending | paid | partial | late
+  receivedAt DateTime? @db.Date
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  leaseUnit LeaseUnit @relation(fields: [leaseUnitId], references: [id], onDelete: Cascade)
+
+  @@unique([leaseUnitId, month])
+  @@index([month, status])
+}
+
+model ChargeStatement {
+  id                  String   @id @default(cuid())
+  realEstatePropertyId String
+  periodStart         DateTime @db.Date
+  periodEnd           DateTime @db.Date
+  tenantAllocationPct Decimal  @default(100) @db.Decimal(5, 2)
+  totalChargesAmount  Decimal  @db.Decimal(12, 2)
+  totalProvisionsAmount Decimal @default(0) @db.Decimal(12, 2)
+  balanceAmount       Decimal  @db.Decimal(12, 2)
+  payload             Json
+  nextLetterIntentAt  DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  realEstateProperty RealEstateProperty @relation(fields: [realEstatePropertyId], references: [id], onDelete: Cascade)
+
+  @@index([realEstatePropertyId, periodStart, periodEnd])
 }
 
 // ——— IA ———
