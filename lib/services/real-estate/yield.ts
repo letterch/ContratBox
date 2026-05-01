@@ -86,3 +86,17 @@ export function summarizeRecurringCharges(
     monthly: toMonthlyAmount(c.amount, c.frequency),
   }))
 }
+
+/** Indicateurs « rendement » non pertinents pour un domicile principal : charges propriétaire uniquement. */
+export function primaryResidenceYieldSummary(monthlyPropertyCharges: number): YieldSummary {
+  const m = Math.max(0, monthlyPropertyCharges)
+  return {
+    monthlyRentalPotential: 0,
+    monthlyRentalReceived: 0,
+    monthlyPropertyCharges: m,
+    monthlyNetCashflow: -m,
+    annualNetCashflow: -m * 12,
+    grossYieldPct: null,
+    netYieldPct: null,
+  }
+}

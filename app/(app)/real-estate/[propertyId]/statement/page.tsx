@@ -7,6 +7,7 @@ import {
   markChargeStatementNextLetterIntentAction,
 } from "@/app/actions/real-estate"
 import { buildChargeStatementNextLetterUrl } from "@/lib/services/nextletter"
+import { isPrimaryResidence } from "@/lib/services/real-estate/investment-kind"
 
 export default async function PropertyStatementPage({
   params,
@@ -16,6 +17,7 @@ export default async function PropertyStatementPage({
   const { propertyId } = await params
   const detail = await getRealEstatePropertyDetail(propertyId)
   if (!detail) return notFound()
+  const primary = isPrimaryResidence(detail.property.investmentKind)
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -34,6 +36,12 @@ export default async function PropertyStatementPage({
             </Button>
           </div>
         </div>
+
+        {primary ? (
+          <div className="rounded-2xl border border-amber-200/80 bg-amber-50/90 dark:bg-amber-950/25 dark:border-amber-900/60 px-4 py-3 text-sm text-foreground">
+            Ce bien est marqué comme domicile principal. Le décompte de charges locatives concerne surtout les baux avec provisions ; vérifiez la pertinence avec votre fiduciaire ou votre situation.
+          </div>
+        ) : null}
 
         <div className="bg-card rounded-2xl border border-border p-4">
           <h2 className="font-semibold text-sm mb-2">Générer un décompte</h2>

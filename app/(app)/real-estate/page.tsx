@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Building2, ListTodo, Landmark, ArrowRight } from "lucide-react"
 import { getRealEstateOverview, createRealEstateFollowUpTaskAction, createRealEstatePropertyAction } from "@/app/actions/real-estate"
 import { Button } from "@/components/ui/button"
+import { investmentKindLabel } from "@/lib/services/real-estate/investment-kind"
 
 export default async function RealEstatePage() {
   const data = await getRealEstateOverview()
@@ -11,8 +12,7 @@ export default async function RealEstatePage() {
         <div>
           <h1 className="text-xl font-bold text-foreground">Gestion immobilière</h1>
           <p className="text-sm text-muted-foreground">
-            Vue des loyers et charges liés aux contrats « bail » et « hypothèque ». Créez des tâches de suivi pour ne
-            pas manquer une échéance (module Tâches requis).
+            Distinction nette entre domicile principal et bien de rendement : les loyers du tableau ci-dessous ne comptent que les biens locatifs ; les charges agrègent tous les biens (hypothèques incluses).
           </p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -21,20 +21,21 @@ export default async function RealEstatePage() {
             <p className="text-2xl font-bold">{data?.propertyCount ?? 0}</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-5">
-            <p className="text-xs text-muted-foreground">Revenus mensuels</p>
+            <p className="text-xs text-muted-foreground">Loyers mensuels (biens de rendement)</p>
             <p className="text-2xl font-bold text-[oklch(0.56_0.15_162)]">
               CHF {(data?.monthlyIncome ?? 0).toLocaleString("fr-CH")}
             </p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-5">
-            <p className="text-xs text-muted-foreground">Charges mensuelles</p>
+            <p className="text-xs text-muted-foreground">Charges mensuelles (tous biens)</p>
             <p className="text-2xl font-bold text-[oklch(0.57_0.20_25)]">
               CHF {(data?.monthlyCharges ?? 0).toLocaleString("fr-CH")}
             </p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-5">
-            <p className="text-xs text-muted-foreground">Net mensuel</p>
+            <p className="text-xs text-muted-foreground">Solde indicatif</p>
             <p className="text-2xl font-bold">CHF {(data?.netMonthly ?? 0).toLocaleString("fr-CH")}</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Loyers locatifs − charges totales patrimoine</p>
           </div>
         </div>
 
@@ -43,18 +44,28 @@ export default async function RealEstatePage() {
             <Landmark className="w-4 h-4" />
             Ajouter un bien
           </h2>
-          <form action={createRealEstatePropertyAction} className="grid grid-cols-1 md:grid-cols-5 gap-2">
-            <input name="name" required placeholder="Nom du bien (ex: PPE Crissier)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
-            <input name="address" placeholder="Adresse (optionnel)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
-            <select name="propertyType" className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
-              <option value="apartment">Appartement</option>
-              <option value="house">Maison</option>
-              <option value="mixed">Immeuble mixte</option>
-              <option value="commercial">Commercial</option>
-              <option value="other">Autre</option>
-            </select>
-            <input name="valuationChf" type="number" step="1" min="0" placeholder="Valeur CHF (optionnel)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
-            <Button type="submit" className="rounded-xl">Créer</Button>
+          <form action={createRealEstatePropertyAction} className="flex flex-col gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <input name="name" required placeholder="Nom (ex: Orbe, Crissier)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+              <input name="address" placeholder="Adresse (optionnel)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+              <select name="propertyType" className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
+                <option value="apartment">Appartement</option>
+                <option value="house">Maison</option>
+                <option value="mixed">Immeuble mixte</option>
+                <option value="commercial">Commercial</option>
+                <option value="other">Autre</option>
+              </select>
+              <select name="investmentKind" className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
+                <option value="rental">Bien de rendement</option>
+                <option value="primary_residence">Domicile principal</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+              <input name="valuationChf" type="number" step="1" min="0" placeholder="Valeur CHF (optionnel)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+              <Button type="submit" className="rounded-xl w-fit">
+                Créer le bien
+              </Button>
+            </div>
           </form>
         </div>
 
@@ -74,12 +85,15 @@ export default async function RealEstatePage() {
                   className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2"
                 >
                   <div>
-                    <p className="text-sm font-medium text-foreground">
+                    <p className="text-sm font-medium text-foreground flex flex-wrap items-center gap-2">
                       {p.name}
+                      <span className="text-[10px] font-normal rounded-full border border-border px-1.5 py-px text-muted-foreground">
+                        {investmentKindLabel(p.investmentKind)}
+                      </span>
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {p.address ?? "Adresse non renseignée"} · Revenus CHF {p.monthlyIncome.toLocaleString("fr-CH")} / Charges CHF{" "}
-                      {p.monthlyCharges.toLocaleString("fr-CH")} · Net CHF {p.netMonthly.toLocaleString("fr-CH")}
+                      {p.address ?? "Adresse non renseignée"} · Loyers CHF {p.monthlyIncome.toLocaleString("fr-CH")} / Charges CHF{" "}
+                      {p.monthlyCharges.toLocaleString("fr-CH")} · Solde CHF {p.netMonthly.toLocaleString("fr-CH")}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

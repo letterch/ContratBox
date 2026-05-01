@@ -7,7 +7,8 @@ import { getAccessContextForUser, accessCanUseModule, accessTaskQuotaAllows } fr
 import { createHouseholdTask, countNonArchivedTasks } from "@/lib/services/household-task"
 import { buildChargeStatementPayload } from "@/lib/services/real-estate/statement"
 import { computeMortgageCharges, computeMortgageMaturityAlerts } from "@/lib/services/real-estate/finance"
-import { computeYieldSummary } from "@/lib/services/real-estate/yield"
+import { computeYieldSummary, primaryResidenceYieldSummary } from "@/lib/services/real-estate/yield"
+import { isPrimaryResidence, parseInvestmentKind } from "@/lib/services/real-estate/investment-kind"
 
 function toRateType(value: unknown): "fixed" | "saron" {
   return String(value ?? "").toLowerCase() === "saron" ? "saron" : "fixed"
@@ -97,15 +98,17 @@ export async function getRealEstateOverview() {
         frequency: c.frequency as "monthly" | "quarterly" | "annual",
       })),
     })
-    const rentPotential = p.leases
-      .filter((l) => l.isRented)
-      .reduce((sum, l) => sum + Number(l.rentMonthly) + Number(l.chargesMonthly), 0)
+    const rentalProperty = !isPrimaryResidence(p.investmentKind)
+    const rentPotential = rentalProperty
+      ? p.leases.filter((l) => l.isRented).reduce((sum, l) => sum + Number(l.rentMonthly) + Number(l.chargesMonthly), 0)
+      : 0
     monthlyIncome += rentPotential
     monthlyCharges += finance.monthlyTotal
     return {
       id: p.id,
       name: p.name,
       address: p.address,
+      investmentKind: p.investmentKind,
       monthlyIncome: rentPotential,
       monthlyCharges: finance.monthlyTotal,
       netMonthly: rentPotential - finance.monthlyTotal,
@@ -176,8 +179,9 @@ export async function createRealEstatePropertyAction(formData: FormData) {
   const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
   const valuationNum = valuationRaw ? Number(valuationRaw) : NaN
   const valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
+  const investmentKind = parseInvestmentKind(formData.get("investmentKind"))
   await prisma.realEstateProperty.create({
-    data: { householdId, name, address, propertyType, isActive: true, valuationChf },
+    data: { householdId, name, address, propertyType, investmentKind, isActive: true, valuationChf },
   })
   revalidatePath("/real-estate")
 }
@@ -192,8 +196,12 @@ export async function updateRealEstatePropertyAction(formData: FormData) {
     name: string
     address: string | null
     propertyType: string
+    investmentKind?: string
     valuationChf?: number | null
   } = { name, address, propertyType }
+  if (formData.has("investmentKind")) {
+    data.investmentKind = parseInvestmentKind(formData.get("investmentKind"))
+  }
   if (formData.has("valuationChf")) {
     const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
     if (valuationRaw === "") {
@@ -221,14 +229,16 @@ export async function updatePropertyValuationAction(formData: FormData) {
     const valuationNum = Number(valuationRaw)
     valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
   }
+  const investmentKind = parseInvestmentKind(formData.get("investmentKind"))
   const updated = await prisma.realEstateProperty.updateMany({
     where: { id: propertyId, householdId },
-    data: { valuationChf },
+    data: { valuationChf, investmentKind },
   })
   if (updated.count === 0) throw new Error("Bien introuvable")
   revalidatePath("/real-estate")
   revalidatePath(`/real-estate/${propertyId}/financing`)
   revalidatePath(`/real-estate/${propertyId}/operations`)
+  revalidatePath(`/real-estate/${propertyId}/statement`)
 }
 
 export async function archiveRealEstatePropertyAction(formData: FormData) {
@@ -631,27 +641,29 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
   })
   const alerts = computeMortgageMaturityAlerts(tranches)
   const valuation = property.valuationChf != null ? Number(property.valuationChf) : 0
-  const yieldSummary = computeYieldSummary({
-    propertyValue: valuation,
-    rents: property.leases.map((l) => ({
-      rentMonthly: Number(l.rentMonthly),
-      chargesMonthly: Number(l.chargesMonthly),
-      isRented: l.isRented,
-    })),
-    payments: property.leases.flatMap((l) =>
-      l.rentPayments.map((p) => ({
-        expectedAmount: Number(p.expectedAmount),
-        receivedAmount: Number(p.receivedAmount),
-        month: p.month,
-      }))
-    ),
-    mortgageTranches: financeInputs.mortgageTranches,
-    amortizationEntries: financeInputs.amortizationEntries,
-    extraCharges: property.charges.map((c) => ({
-      amount: Number(c.amount),
-      frequency: c.frequency as "monthly" | "quarterly" | "annual",
-    })),
-  })
+  const yieldSummary = isPrimaryResidence(property.investmentKind)
+    ? primaryResidenceYieldSummary(finance.monthlyTotal)
+    : computeYieldSummary({
+        propertyValue: valuation,
+        rents: property.leases.map((l) => ({
+          rentMonthly: Number(l.rentMonthly),
+          chargesMonthly: Number(l.chargesMonthly),
+          isRented: l.isRented,
+        })),
+        payments: property.leases.flatMap((l) =>
+          l.rentPayments.map((p) => ({
+            expectedAmount: Number(p.expectedAmount),
+            receivedAmount: Number(p.receivedAmount),
+            month: p.month,
+          }))
+        ),
+        mortgageTranches: financeInputs.mortgageTranches,
+        amortizationEntries: financeInputs.amortizationEntries,
+        extraCharges: property.charges.map((c) => ({
+          amount: Number(c.amount),
+          frequency: c.frequency as "monthly" | "quarterly" | "annual",
+        })),
+      })
   return { property, finance, alerts, yieldSummary }
 }
 

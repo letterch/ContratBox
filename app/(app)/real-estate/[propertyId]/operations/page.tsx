@@ -14,6 +14,7 @@ import {
   DeleteRentPaymentButton,
   ResetPropertyOperationsButton,
 } from "@/components/real-estate/operations-actions"
+import { investmentKindLabel, isPrimaryResidence } from "@/lib/services/real-estate/investment-kind"
 
 export default async function PropertyOperationsPage({
   params,
@@ -23,14 +24,25 @@ export default async function PropertyOperationsPage({
   const { propertyId } = await params
   const detail = await getRealEstatePropertyDetail(propertyId)
   if (!detail) return notFound()
+  const primary = isPrimaryResidence(detail.property.investmentKind)
 
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-5xl mx-auto flex flex-col gap-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">{detail.property.name}</h1>
-            <p className="text-sm text-muted-foreground">Étape 2/4 — Loyers encaissés et charges PPE/immeuble.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold">{detail.property.name}</h1>
+              <span className="text-[11px] rounded-full border border-border bg-muted/60 px-2 py-0.5 text-muted-foreground">
+                {investmentKindLabel(detail.property.investmentKind)}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Étape 2/4 —{" "}
+              {primary
+                ? "Charges liées à votre logement (et financement à l’étape 1). Pas de rendement locatif sur un domicile principal."
+                : "Loyers encaissés, charges PPE/immeuble et décompte locatif."}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2 justify-end items-center">
             <ResetPropertyOperationsButton propertyId={propertyId} />
@@ -44,19 +56,30 @@ export default async function PropertyOperationsPage({
         </div>
 
         <div className="bg-card rounded-2xl border border-border p-4">
-          <h2 className="font-semibold text-sm mb-2">Valeur du bien et rendement</h2>
+          <h2 className="font-semibold text-sm mb-2">Usage du bien et valeur</h2>
           <p className="text-xs text-muted-foreground mb-3">
-            Indiquez le prix d’achat ou une valeur estimée du bien en CHF (distinct de la dette hypothécaire). C’est le dénominateur pour les rendements affichés plus bas.
-            Pour les décomptes officiels locatif / provisions et envoi au locataire ou à la fiduciaire, utilisez l’étape{" "}
+            Choisissez si ce bien est votre domicile principal ou un bien de rendement (locatif). La valeur en CHF sert au rendement uniquement pour les biens de rendement (pas la dette hypothécaire).
+            Décompte officiel et envoi NextLetter : étape{" "}
             <Link href={`/real-estate/${propertyId}/statement`} className="underline underline-offset-2">
               Décompte
             </Link>
             .
           </p>
-          <form action={updatePropertyValuationAction} className="flex flex-wrap gap-2 items-end">
+          <form action={updatePropertyValuationAction} className="flex flex-wrap gap-3 items-end">
             <input type="hidden" name="propertyId" value={propertyId} />
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-muted-foreground">Valeur du bien CHF (prix d’achat ou estimée)</label>
+              <label className="text-[11px] text-muted-foreground">Type</label>
+              <select
+                name="investmentKind"
+                defaultValue={detail.property.investmentKind === "primary_residence" ? "primary_residence" : "rental"}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-sm min-w-[13rem]"
+              >
+                <option value="rental">Bien de rendement (locatif)</option>
+                <option value="primary_residence">Domicile principal</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] text-muted-foreground">Valeur CHF (achat ou estimée)</label>
               <input
                 name="valuationChf"
                 type="number"
@@ -68,7 +91,7 @@ export default async function PropertyOperationsPage({
               />
             </div>
             <Button type="submit" variant="outline" className="rounded-xl">
-              Enregistrer la valeur
+              Enregistrer
             </Button>
           </form>
         </div>
@@ -157,41 +180,48 @@ export default async function PropertyOperationsPage({
 
         <div className="bg-muted/40 rounded-2xl border border-border/80 p-4 text-xs text-muted-foreground space-y-2">
           <p className="font-medium text-foreground text-sm">Comment sont calculés ces indicateurs</p>
-          <ul className="list-disc pl-4 space-y-1">
-            <li>
-              Rendement brut : (loyer mensuel contractuel + charges mensuelles du bail pour les lots loués) × 12 ÷ valeur du bien. Potentiel contractuel, hors impayés.
-            </li>
-            <li>
-              Rendement net : (cash-flow mensuel × 12) ÷ valeur du bien. Cash-flow = encaissements réels moyens par mois calendaire enregistré (somme reçue ÷ nombre de mois concernés), moins toutes les charges propriétaire mensuelles (hypothèque, amortissement, PPE / frais saisis).
-            </li>
-            <li>Sans valeur de bien renseignée, les rendements restent vides (évite les pourcentages aberrants).</li>
-          </ul>
+          {primary ? (
+            <p>
+              Domicile principal : aucun rendement locatif affiché. Le cash-flow correspond aux charges propriétaire mensuelles (hypothèque, amortissement et frais saisis), sans loyer attendu.
+            </p>
+          ) : (
+            <ul className="list-disc pl-4 space-y-1">
+              <li>
+                Rendement brut : (loyer mensuel contractuel + charges mensuelles du bail pour les lots loués) × 12 ÷ valeur du bien. Potentiel contractuel, hors impayés.
+              </li>
+              <li>
+                Rendement net : (cash-flow mensuel × 12) ÷ valeur du bien. Cash-flow = encaissements réels moyens par mois calendaire enregistré, moins toutes les charges propriétaire mensuelles.
+              </li>
+              <li>Sans valeur de bien renseignée, les rendements restent vides.</li>
+            </ul>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Rendement brut</p>
             <p className="text-lg font-semibold">
-              {detail.yieldSummary.grossYieldPct != null ? `${detail.yieldSummary.grossYieldPct.toFixed(2)} %` : "—"}
+              {primary ? "—" : detail.yieldSummary.grossYieldPct != null ? `${detail.yieldSummary.grossYieldPct.toFixed(2)} %` : "—"}
             </p>
             <p className="text-[11px] text-muted-foreground mt-1">
-              Contractuel : CHF {detail.yieldSummary.monthlyRentalPotential.toLocaleString("fr-CH")} / mois loué
+              {primary ? "Non applicable (domicile principal)" : `Contractuel : CHF ${detail.yieldSummary.monthlyRentalPotential.toLocaleString("fr-CH")} / mois loué`}
             </p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Rendement net</p>
             <p className="text-lg font-semibold">
-              {detail.yieldSummary.netYieldPct != null ? `${detail.yieldSummary.netYieldPct.toFixed(2)} %` : "—"}
+              {primary ? "—" : detail.yieldSummary.netYieldPct != null ? `${detail.yieldSummary.netYieldPct.toFixed(2)} %` : "—"}
             </p>
             <p className="text-[11px] text-muted-foreground mt-1">
-              Sur base encaissements : CHF {detail.yieldSummary.monthlyRentalReceived.toLocaleString("fr-CH")} / mois · Charges CHF{" "}
-              {detail.yieldSummary.monthlyPropertyCharges.toLocaleString("fr-CH")} / mois
+              {primary ? "Non applicable (domicile principal)" : `Encaissements : CHF ${detail.yieldSummary.monthlyRentalReceived.toLocaleString("fr-CH")} / mois · Charges CHF ${detail.yieldSummary.monthlyPropertyCharges.toLocaleString("fr-CH")} / mois`}
             </p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Cashflow mensuel</p>
             <p className="text-lg font-semibold">CHF {detail.yieldSummary.monthlyNetCashflow.toLocaleString("fr-CH")}</p>
-            <p className="text-[11px] text-muted-foreground mt-1">Encaissements moyens − charges propriétaire totales</p>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {primary ? "Charges propriétaire (sans loyer attendu)" : "Encaissements moyens − charges propriétaire totales"}
+            </p>
           </div>
         </div>
       </div>

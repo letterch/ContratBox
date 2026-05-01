@@ -254,13 +254,15 @@ model HouseholdTask {
   @@index([sourceAdministrativeItemId])
 }
 
-// ——— Immobilier locatif (MVP) ———
+// ——— Patrimoine immobilier ———
 model RealEstateProperty {
   id          String   @id @default(cuid())
   householdId String
   name        String
   address     String?
   propertyType String  @default("apartment") // apartment | house | mixed | commercial | other
+  /** rental = locatif / rendement ; primary_residence = habitation propre (pas de rendement locatif par défaut) */
+  investmentKind String @default("rental") // rental | primary_residence
   /** Prix d’achat ou valeur estimée (CHF), base pour le rendement brut / net — pas la dette hypothécaire */
   valuationChf Decimal? @db.Decimal(14, 2)
   isActive    Boolean  @default(true)

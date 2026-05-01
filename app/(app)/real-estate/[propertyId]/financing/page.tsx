@@ -11,6 +11,7 @@ import {
   updateRealEstatePropertyAction,
 } from "@/app/actions/real-estate"
 import { DeleteAllTranchesButton, ResetPropertyFinancingButton } from "@/components/real-estate/financing-reset-buttons"
+import { investmentKindLabel, isPrimaryResidence } from "@/lib/services/real-estate/investment-kind"
 
 export default async function PropertyFinancingPage({
   params,
@@ -20,15 +21,22 @@ export default async function PropertyFinancingPage({
   const { propertyId } = await params
   const detail = await getRealEstatePropertyDetail(propertyId)
   if (!detail) return notFound()
+  const primary = isPrimaryResidence(detail.property.investmentKind)
 
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-5xl mx-auto flex flex-col gap-5">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold">{detail.property.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-bold">{detail.property.name}</h1>
+              <span className="text-[11px] rounded-full border border-border bg-muted/60 px-2 py-0.5 text-muted-foreground">
+                {investmentKindLabel(detail.property.investmentKind)}
+              </span>
+            </div>
             <p className="text-sm text-muted-foreground">
-              Étape 1/4 — Financement hypothécaire. Puis loyers/charges, décompte et simulation.
+              Étape 1/4 — Financement hypothécaire
+              {primary ? " (résidence principale)." : " (locatif)."} Puis loyers/charges et décompte.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 justify-end items-center">
@@ -44,27 +52,41 @@ export default async function PropertyFinancingPage({
 
         <div className="bg-card rounded-2xl border border-border p-4">
           <h2 className="font-semibold text-sm mb-2">Informations du bien</h2>
-          <form action={updateRealEstatePropertyAction} className="grid grid-cols-1 md:grid-cols-5 gap-2">
+          <form action={updateRealEstatePropertyAction} className="flex flex-col gap-2">
             <input type="hidden" name="propertyId" value={propertyId} />
-            <input name="name" defaultValue={detail.property.name} className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
-            <input name="address" defaultValue={detail.property.address ?? ""} className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
-            <select name="propertyType" defaultValue={detail.property.propertyType} className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
-              <option value="apartment">Appartement</option>
-              <option value="house">Maison</option>
-              <option value="mixed">Immeuble mixte</option>
-              <option value="commercial">Commercial</option>
-              <option value="other">Autre</option>
-            </select>
-            <input
-              name="valuationChf"
-              type="number"
-              step="1"
-              min="0"
-              placeholder="Valeur bien CHF"
-              defaultValue={detail.property.valuationChf != null ? Number(detail.property.valuationChf) : ""}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
-            />
-            <Button type="submit" className="rounded-xl">Mettre à jour</Button>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <input name="name" defaultValue={detail.property.name} className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+              <input name="address" defaultValue={detail.property.address ?? ""} className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+              <select name="propertyType" defaultValue={detail.property.propertyType} className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
+                <option value="apartment">Appartement</option>
+                <option value="house">Maison</option>
+                <option value="mixed">Immeuble mixte</option>
+                <option value="commercial">Commercial</option>
+                <option value="other">Autre</option>
+              </select>
+              <select
+                name="investmentKind"
+                defaultValue={detail.property.investmentKind === "primary_residence" ? "primary_residence" : "rental"}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="rental">Bien de rendement</option>
+                <option value="primary_residence">Domicile principal</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+              <input
+                name="valuationChf"
+                type="number"
+                step="1"
+                min="0"
+                placeholder="Valeur bien CHF (rendement / patrimoine)"
+                defaultValue={detail.property.valuationChf != null ? Number(detail.property.valuationChf) : ""}
+                className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              />
+              <Button type="submit" className="rounded-xl w-fit">
+                Mettre à jour
+              </Button>
+            </div>
           </form>
         </div>
 
@@ -91,12 +113,17 @@ export default async function PropertyFinancingPage({
           </form>
         </div>
 
-        {detail.property.mortgageLoans.map((loan) => (
+        {detail.property.mortgageLoans.map((loan) => {
+          const capitalAffiche =
+            loan.tranches.length > 0
+              ? loan.tranches.reduce((s, t) => s + Number(t.principal), 0)
+              : Number(loan.principalTotal)
+          return (
           <div key={loan.id} className="bg-card rounded-2xl border border-border p-4">
             <h3 className="font-semibold text-sm">{loan.label}</h3>
             <p className="text-xs text-muted-foreground mb-3">
-              {loan.loanKind === "amortization" ? "Amortissement" : "Hypothèque"} · Dette CHF {Number(loan.principalTotal).toLocaleString("fr-CH")} ·
-              Taux par défaut {Number(loan.amortizationRatePct)}% · {loan.amortizationMode}
+              {loan.loanKind === "amortization" ? "Amortissement" : "Hypothèque"} · Capital CHF {capitalAffiche.toLocaleString("fr-CH")} · Taux par défaut{" "}
+              {Number(loan.amortizationRatePct)}% · {loan.amortizationMode}
             </p>
             <form action={addMortgageTrancheAction} className="grid grid-cols-1 md:grid-cols-6 gap-2 mb-4">
               <input type="hidden" name="loanId" value={loan.id} />
@@ -141,7 +168,8 @@ export default async function PropertyFinancingPage({
               </div>
             ) : null}
           </div>
-        ))}
+          )
+        })}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-card rounded-2xl border border-border p-4">
