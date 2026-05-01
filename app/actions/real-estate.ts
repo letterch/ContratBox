@@ -173,8 +173,11 @@ export async function createRealEstatePropertyAction(formData: FormData) {
   if (!name) throw new Error("Nom du bien requis")
   const address = String(formData.get("address") ?? "").trim() || null
   const propertyType = String(formData.get("propertyType") ?? "apartment").trim() || "apartment"
+  const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
+  const valuationNum = valuationRaw ? Number(valuationRaw) : NaN
+  const valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
   await prisma.realEstateProperty.create({
-    data: { householdId, name, address, propertyType, isActive: true },
+    data: { householdId, name, address, propertyType, isActive: true, valuationChf },
   })
   revalidatePath("/real-estate")
 }
@@ -185,12 +188,47 @@ export async function updateRealEstatePropertyAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim()
   const address = String(formData.get("address") ?? "").trim() || null
   const propertyType = String(formData.get("propertyType") ?? "apartment").trim() || "apartment"
+  const data: {
+    name: string
+    address: string | null
+    propertyType: string
+    valuationChf?: number | null
+  } = { name, address, propertyType }
+  if (formData.has("valuationChf")) {
+    const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
+    if (valuationRaw === "") {
+      data.valuationChf = null
+    } else {
+      const valuationNum = Number(valuationRaw)
+      data.valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
+    }
+  }
   await prisma.realEstateProperty.updateMany({
     where: { id: propertyId, householdId },
-    data: { name, address, propertyType },
+    data,
   })
   revalidatePath("/real-estate")
   revalidatePath(`/real-estate/${propertyId}/financing`)
+  revalidatePath(`/real-estate/${propertyId}/operations`)
+}
+
+export async function updatePropertyValuationAction(formData: FormData) {
+  const { householdId } = await requireOwnerHousehold()
+  const propertyId = String(formData.get("propertyId") ?? "")
+  const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
+  let valuationChf: number | null = null
+  if (valuationRaw !== "") {
+    const valuationNum = Number(valuationRaw)
+    valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
+  }
+  const updated = await prisma.realEstateProperty.updateMany({
+    where: { id: propertyId, householdId },
+    data: { valuationChf },
+  })
+  if (updated.count === 0) throw new Error("Bien introuvable")
+  revalidatePath("/real-estate")
+  revalidatePath(`/real-estate/${propertyId}/financing`)
+  revalidatePath(`/real-estate/${propertyId}/operations`)
 }
 
 export async function archiveRealEstatePropertyAction(formData: FormData) {
@@ -565,7 +603,7 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
     include: {
       mortgageLoans: { include: { tranches: { orderBy: { endDate: "asc" } } } },
       charges: { orderBy: { createdAt: "asc" } },
-      leases: { include: { rentPayments: { orderBy: { month: "desc" }, take: 12 } }, orderBy: { createdAt: "asc" } },
+      leases: { include: { rentPayments: { orderBy: { month: "desc" }, take: 36 } }, orderBy: { createdAt: "asc" } },
       chargeStatements: { orderBy: { createdAt: "desc" }, take: 10 },
     },
   })
@@ -592,8 +630,9 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
     })),
   })
   const alerts = computeMortgageMaturityAlerts(tranches)
+  const valuation = property.valuationChf != null ? Number(property.valuationChf) : 0
   const yieldSummary = computeYieldSummary({
-    propertyValue: property.mortgageLoans.reduce((sum, l) => sum + Number(l.principalTotal), 0) || 1,
+    propertyValue: valuation,
     rents: property.leases.map((l) => ({
       rentMonthly: Number(l.rentMonthly),
       chargesMonthly: Number(l.chargesMonthly),
@@ -603,6 +642,7 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
       l.rentPayments.map((p) => ({
         expectedAmount: Number(p.expectedAmount),
         receivedAmount: Number(p.receivedAmount),
+        month: p.month,
       }))
     ),
     mortgageTranches: financeInputs.mortgageTranches,

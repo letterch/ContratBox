@@ -43,7 +43,7 @@ export default async function RealEstatePage() {
             <Landmark className="w-4 h-4" />
             Ajouter un bien
           </h2>
-          <form action={createRealEstatePropertyAction} className="grid grid-cols-1 md:grid-cols-4 gap-2">
+          <form action={createRealEstatePropertyAction} className="grid grid-cols-1 md:grid-cols-5 gap-2">
             <input name="name" required placeholder="Nom du bien (ex: PPE Crissier)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <input name="address" placeholder="Adresse (optionnel)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <select name="propertyType" className="rounded-xl border border-border bg-background px-3 py-2 text-sm">
@@ -53,6 +53,7 @@ export default async function RealEstatePage() {
               <option value="commercial">Commercial</option>
               <option value="other">Autre</option>
             </select>
+            <input name="valuationChf" type="number" step="1" min="0" placeholder="Valeur CHF (optionnel)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <Button type="submit" className="rounded-xl">Créer</Button>
           </form>
         </div>

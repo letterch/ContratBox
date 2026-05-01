@@ -9,6 +9,8 @@ export type RentRow = {
 export type RentPaymentRow = {
   expectedAmount: number
   receivedAmount: number
+  /** 1er du mois (loyer encaissé) — sert à annualiser les montants réels */
+  month?: Date | null
 }
 
 export type YieldSummary = {
@@ -17,8 +19,9 @@ export type YieldSummary = {
   monthlyPropertyCharges: number
   monthlyNetCashflow: number
   annualNetCashflow: number
-  grossYieldPct: number
-  netYieldPct: number
+  /** Null si aucune valeur de bien renseignée (montant strictement positif en CHF) */
+  grossYieldPct: number | null
+  netYieldPct: number | null
 }
 
 export function computeYieldSummary(input: {
@@ -33,9 +36,22 @@ export function computeYieldSummary(input: {
     .filter((r) => r.isRented)
     .reduce((sum, r) => sum + Math.max(0, r.rentMonthly + r.chargesMonthly), 0)
 
-  const monthlyRentalReceivedRaw = input.payments.reduce((sum, p) => sum + Math.max(0, p.receivedAmount), 0)
-  const monthlyRentalReceived =
-    input.payments.length > 0 ? monthlyRentalReceivedRaw / Math.max(1, input.payments.length) : monthlyRentalPotential
+  let monthlyRentalReceived = monthlyRentalPotential
+  const pays = input.payments.filter((p) => {
+    if (!p.month) return false
+    const d = p.month instanceof Date ? p.month : new Date(p.month)
+    return !Number.isNaN(d.getTime())
+  })
+  if (pays.length > 0) {
+    const totalReceived = pays.reduce((sum, p) => sum + Math.max(0, p.receivedAmount), 0)
+    const monthKeys = new Set(
+      pays.map((p) => {
+        const d = p.month instanceof Date ? p.month : new Date(p.month!)
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+      })
+    )
+    monthlyRentalReceived = totalReceived / Math.max(1, monthKeys.size)
+  }
 
   const finance = computeMortgageCharges({
     mortgageTranches: input.mortgageTranches,
@@ -46,9 +62,10 @@ export function computeYieldSummary(input: {
   const monthlyPropertyCharges = finance.monthlyTotal
   const monthlyNetCashflow = monthlyRentalReceived - monthlyPropertyCharges
   const annualNetCashflow = monthlyNetCashflow * 12
-  const propertyValue = Math.max(1, input.propertyValue)
-  const grossYieldPct = (monthlyRentalPotential * 12 * 100) / propertyValue
-  const netYieldPct = (annualNetCashflow * 100) / propertyValue
+  const basis = input.propertyValue
+  const hasYieldBasis = Number.isFinite(basis) && basis > 0
+  const grossYieldPct = hasYieldBasis ? (monthlyRentalPotential * 12 * 100) / basis : null
+  const netYieldPct = hasYieldBasis ? (annualNetCashflow * 100) / basis : null
 
   return {
     monthlyRentalPotential,

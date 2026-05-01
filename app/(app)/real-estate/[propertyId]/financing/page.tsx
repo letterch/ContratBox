@@ -44,7 +44,7 @@ export default async function PropertyFinancingPage({
 
         <div className="bg-card rounded-2xl border border-border p-4">
           <h2 className="font-semibold text-sm mb-2">Informations du bien</h2>
-          <form action={updateRealEstatePropertyAction} className="grid grid-cols-1 md:grid-cols-4 gap-2">
+          <form action={updateRealEstatePropertyAction} className="grid grid-cols-1 md:grid-cols-5 gap-2">
             <input type="hidden" name="propertyId" value={propertyId} />
             <input name="name" defaultValue={detail.property.name} className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <input name="address" defaultValue={detail.property.address ?? ""} className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
@@ -55,6 +55,15 @@ export default async function PropertyFinancingPage({
               <option value="commercial">Commercial</option>
               <option value="other">Autre</option>
             </select>
+            <input
+              name="valuationChf"
+              type="number"
+              step="1"
+              min="0"
+              placeholder="Valeur bien CHF"
+              defaultValue={detail.property.valuationChf != null ? Number(detail.property.valuationChf) : ""}
+              className="rounded-xl border border-border bg-background px-3 py-2 text-sm"
+            />
             <Button type="submit" className="rounded-xl">Mettre à jour</Button>
           </form>
         </div>
