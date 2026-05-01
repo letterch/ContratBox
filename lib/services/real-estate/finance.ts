@@ -36,9 +36,8 @@ export function toMonthlyAmount(amount: number, frequency: Frequency): number {
 }
 
 /**
- * Règle métier demandée:
- * intérêts mensuels = dette * taux / 100 / 4 / 3
- * amortissement mensuel = dette * tauxAmortissement / 100 / 4 / 3
+ * Mensualisation équivalente au passage annuel → trimestriel → mensuel :
+ * mensuel = dette × taux% / 100 / 12 (= / 4 / 3 trimestriel puis / 3 mois).
  */
 export function computeMortgageCharges(input: {
   mortgageTranches: MortgageTrancheInput[]
@@ -53,15 +52,15 @@ export function computeMortgageCharges(input: {
   const amortizationEntries = input.amortizationEntries.filter((a) => a.principal > 0 && a.ratePct >= 0)
 
   const monthlyInterest = mortgageTranches.reduce(
-    (sum, t) => sum + (safeNumber(t.principal) * safeNumber(t.ratePct)) / 100 / 4 / 3,
+    (sum, t) => sum + (safeNumber(t.principal) * safeNumber(t.ratePct)) / 100 / 12,
     0
   )
   const monthlyAmortizationDirect = amortizationEntries
     .filter((a) => (a.mode ?? "direct") === "direct")
-    .reduce((sum, a) => sum + (safeNumber(a.principal) * safeNumber(a.ratePct)) / 100 / 4 / 3, 0)
+    .reduce((sum, a) => sum + (safeNumber(a.principal) * safeNumber(a.ratePct)) / 100 / 12, 0)
   const monthlyAmortizationIndirect = amortizationEntries
     .filter((a) => (a.mode ?? "direct") === "indirect")
-    .reduce((sum, a) => sum + (safeNumber(a.principal) * safeNumber(a.ratePct)) / 100 / 4 / 3, 0)
+    .reduce((sum, a) => sum + (safeNumber(a.principal) * safeNumber(a.ratePct)) / 100 / 12, 0)
   const monthlyAmortization = monthlyAmortizationDirect + monthlyAmortizationIndirect
   const monthlyAdditionalCharges = (input.additionalCharges ?? []).reduce(
     (sum, c) => sum + toMonthlyAmount(c.amount, c.frequency),

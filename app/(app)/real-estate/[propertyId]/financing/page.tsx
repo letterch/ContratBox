@@ -11,6 +11,7 @@ import {
   updateMortgageTrancheAction,
   updateRealEstatePropertyAction,
 } from "@/app/actions/real-estate"
+import { DeleteAllTranchesButton, ResetPropertyFinancingButton } from "@/components/real-estate/financing-reset-buttons"
 
 export default async function PropertyFinancingPage({
   params,
@@ -34,7 +35,8 @@ export default async function PropertyFinancingPage({
               Étape 1/4 — Financement hypothécaire. Puis loyers/charges, décompte et simulation.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end items-center">
+            <ResetPropertyFinancingButton propertyId={propertyId} />
             <Button asChild variant="outline" className="rounded-xl">
               <Link href={`/real-estate/${propertyId}/operations`}>Loyers & charges</Link>
             </Button>
@@ -63,6 +65,10 @@ export default async function PropertyFinancingPage({
 
         <div className="bg-card rounded-2xl border border-border p-4">
           <h2 className="font-semibold text-sm mb-2">Ajouter une dette hypothécaire</h2>
+          <p className="text-xs text-muted-foreground mb-3">
+            Créez une ligne « Dette hypothécaire (intérêts) » avec le taux d’intérêt annuel (ex. 0,94 %), puis une ligne « Amortissement » avec le taux d’amortissement annuel (ex. 1,25 %).
+            Sans tranche saisie, le calcul utilise le capital et le taux de la ligne. Les charges PPE et autres s’ajoutent depuis Loyers & charges.
+          </p>
           <form action={createMortgageLoanAction} className="grid grid-cols-1 md:grid-cols-4 gap-2">
             <input type="hidden" name="propertyId" value={propertyId} />
             <input name="label" placeholder="Label prêt" defaultValue="Dette hypothécaire" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
@@ -75,7 +81,7 @@ export default async function PropertyFinancingPage({
               <option value="indirect">Amortissement indirect</option>
             </select>
             <input name="principalTotal" type="number" step="0.01" placeholder="Dette totale CHF" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
-            <input name="amortizationRatePct" type="number" step="0.0001" defaultValue="1.25" placeholder="Taux amortissement %" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
+            <input name="amortizationRatePct" type="number" step="0.0001" defaultValue="1.25" placeholder="Taux annuel (%)" className="rounded-xl border border-border bg-background px-3 py-2 text-sm" />
             <Button type="submit" className="rounded-xl">Créer le prêt</Button>
           </form>
         </div>
@@ -124,12 +130,17 @@ export default async function PropertyFinancingPage({
                 </li>
               ))}
             </ul>
+            {loan.tranches.length > 0 ? (
+              <div className="mt-3 flex justify-end">
+                <DeleteAllTranchesButton loanId={loan.id} />
+              </div>
+            ) : null}
           </div>
         ))}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="bg-card rounded-2xl border border-border p-4">
-            <p className="text-xs text-muted-foreground">Charges mensuelles actuelles</p>
+            <p className="text-xs text-muted-foreground">Charges mensuelles actuelles (hypo + amort. + frais saisis)</p>
             <p className="text-lg font-semibold">CHF {detail.finance.monthlyTotal.toLocaleString("fr-CH")}</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">

@@ -17,25 +17,36 @@ function toAmortizationMode(value: unknown): "direct" | "indirect" {
   return String(value ?? "").toLowerCase() === "indirect" ? "indirect" : "direct"
 }
 
-function buildFinanceInputs(loans: Array<{
-  loanKind: string
-  amortizationMode: string
-  principalTotal: { toString(): string } | number
-  amortizationRatePct: { toString(): string } | number
-  tranches: Array<{ principal: { toString(): string } | number; ratePct: { toString(): string } | number; rateType: string }>
-}>) {
+function buildFinanceInputs(
+  loans: Array<{
+    loanKind: string
+    amortizationMode: string
+    principalTotal: { toString(): string } | number
+    amortizationRatePct: { toString(): string } | number
+    tranches: Array<{ principal: { toString(): string } | number; ratePct: { toString(): string } | number; rateType: string }>
+  }>,
+  opts?: { mortgageInterestRateDeltaPct?: number }
+) {
+  const rateBump = Number.isFinite(opts?.mortgageInterestRateDeltaPct) ? Number(opts?.mortgageInterestRateDeltaPct) : 0
   const mortgageLoans = loans.filter((l) => l.loanKind !== "amortization")
   const amortizationLoans = loans.filter((l) => l.loanKind === "amortization")
 
-  const mortgageTranches = mortgageLoans.flatMap((l) =>
-    l.tranches.map((t) => ({
-      principal: Number(t.principal),
-      ratePct: Number(t.ratePct),
-      rateType: toRateType(t.rateType),
-    }))
-  )
+  /** Intérêts : tranches si présentes, sinon capital du prêt × taux stocké sur la ligne (champ « taux » du formulaire). */
+  const mortgageTranches = mortgageLoans.flatMap((l) => {
+    if (l.tranches.length > 0) {
+      return l.tranches.map((t) => ({
+        principal: Number(t.principal),
+        ratePct: Number(t.ratePct) + rateBump,
+        rateType: toRateType(t.rateType),
+      }))
+    }
+    const principal = Number(l.principalTotal)
+    const ratePct = Number(l.amortizationRatePct) + rateBump
+    if (principal <= 0 || ratePct < 0) return []
+    return [{ principal, ratePct, rateType: "fixed" as const }]
+  })
 
-  const amortizationEntriesFromLoans = amortizationLoans.flatMap((l) => {
+  const amortizationEntries = amortizationLoans.flatMap((l) => {
     if (l.tranches.length > 0) {
       return l.tranches.map((t) => ({
         principal: Number(t.principal),
@@ -52,19 +63,9 @@ function buildFinanceInputs(loans: Array<{
     ]
   })
 
-  // Fallback MVP: si aucun prêt d'amortissement dédié, appliquer le taux générique des prêts hypothécaires.
-  const amortizationEntriesFallback =
-    amortizationEntriesFromLoans.length === 0
-      ? mortgageLoans.map((l) => ({
-          principal: Number(l.principalTotal),
-          ratePct: Number(l.amortizationRatePct),
-          mode: "direct" as const,
-        }))
-      : []
-
   return {
     mortgageTranches,
-    amortizationEntries: [...amortizationEntriesFromLoans, ...amortizationEntriesFallback],
+    amortizationEntries,
   }
 }
 
@@ -277,6 +278,30 @@ export async function deleteMortgageTrancheAction(formData: FormData) {
   if (!tranche || tranche.mortgageLoan.realEstateProperty.householdId !== householdId) throw new Error("Tranche introuvable")
   await prisma.mortgageTranche.delete({ where: { id: trancheId } })
   revalidatePath(`/real-estate/${tranche.mortgageLoan.realEstatePropertyId}/financing`)
+  revalidatePath("/real-estate")
+}
+
+export async function deleteAllMortgageTranchesAction(loanId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const loan = await prisma.mortgageLoan.findFirst({
+    where: { id: loanId },
+    include: { realEstateProperty: true },
+  })
+  if (!loan || loan.realEstateProperty.householdId !== householdId) throw new Error("Prêt introuvable")
+  await prisma.mortgageTranche.deleteMany({ where: { mortgageLoanId: loanId } })
+  revalidatePath(`/real-estate/${loan.realEstateProperty.id}/financing`)
+  revalidatePath("/real-estate")
+}
+
+export async function resetPropertyFinancingAction(propertyId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const property = await prisma.realEstateProperty.findFirst({
+    where: { id: propertyId, householdId },
+    select: { id: true },
+  })
+  if (!property) throw new Error("Bien introuvable")
+  await prisma.mortgageLoan.deleteMany({ where: { realEstatePropertyId: propertyId } })
+  revalidatePath(`/real-estate/${propertyId}/financing`)
   revalidatePath("/real-estate")
 }
 
@@ -520,11 +545,7 @@ export async function getRealEstatePropertyDetail(propertyId: string) {
         receivedAmount: Number(p.receivedAmount),
       }))
     ),
-    mortgageTranches: tranches.map((t) => ({
-      principal: t.principal,
-      ratePct: t.ratePct,
-      rateType: toRateType(t.rateType),
-    })),
+    mortgageTranches: financeInputs.mortgageTranches,
     amortizationEntries: financeInputs.amortizationEntries,
     extraCharges: property.charges.map((c) => ({
       amount: Number(c.amount),
@@ -538,15 +559,9 @@ export async function getPropertySimulation(propertyId: string, rateDeltaPct: nu
   const detail = await getRealEstatePropertyDetail(propertyId)
   if (!detail) return null
   const delta = Number.isFinite(rateDeltaPct) ? rateDeltaPct : 0
-  const financeInputs = buildFinanceInputs(
-    detail.property.mortgageLoans.map((l) => ({
-      ...l,
-      tranches: l.tranches.map((t) => ({
-        ...t,
-        ratePct: l.loanKind === "amortization" ? t.ratePct : Number(t.ratePct) + delta,
-      })),
-    }))
-  )
+  const financeInputs = buildFinanceInputs(detail.property.mortgageLoans, {
+    mortgageInterestRateDeltaPct: delta,
+  })
   const simulation = computeMortgageCharges({
     mortgageTranches: financeInputs.mortgageTranches,
     amortizationEntries: financeInputs.amortizationEntries,
