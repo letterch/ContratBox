@@ -5,7 +5,6 @@ import {
   addMortgageTrancheAction,
   createMortgageLoanAction,
   deleteMortgageTrancheAction,
-  getPropertySimulation,
   getRealEstatePropertyDetail,
   syncMortgageMaturityTasksAction,
   updateMortgageTrancheAction,
@@ -21,9 +20,6 @@ export default async function PropertyFinancingPage({
   const { propertyId } = await params
   const detail = await getRealEstatePropertyDetail(propertyId)
   if (!detail) return notFound()
-
-  const simulationUp = await getPropertySimulation(propertyId, 0.5)
-  const simulationDown = await getPropertySimulation(propertyId, -0.5)
 
   return (
     <div className="min-h-screen bg-background p-6">
@@ -138,7 +134,7 @@ export default async function PropertyFinancingPage({
           </div>
         ))}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Charges mensuelles actuelles (hypo + amort. + frais saisis)</p>
             <p className="text-lg font-semibold">CHF {detail.finance.monthlyTotal.toLocaleString("fr-CH")}</p>
@@ -150,16 +146,6 @@ export default async function PropertyFinancingPage({
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Amortissement mensuel total</p>
             <p className="text-lg font-semibold">CHF {detail.finance.monthlyAmortization.toLocaleString("fr-CH")}</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="bg-card rounded-2xl border border-border p-4">
-            <p className="text-xs text-muted-foreground">Simulation taux +0.50%</p>
-            <p className="text-lg font-semibold">CHF {(simulationUp?.monthlyTotal ?? 0).toLocaleString("fr-CH")}</p>
-          </div>
-          <div className="bg-card rounded-2xl border border-border p-4">
-            <p className="text-xs text-muted-foreground">Simulation taux -0.50%</p>
-            <p className="text-lg font-semibold">CHF {(simulationDown?.monthlyTotal ?? 0).toLocaleString("fr-CH")}</p>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground">Amort. direct / indirect</p>
