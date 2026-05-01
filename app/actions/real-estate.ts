@@ -428,6 +428,66 @@ export async function recordRentPaymentAction(formData: FormData) {
   revalidatePath("/real-estate")
 }
 
+export async function deletePropertyChargeAction(chargeId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const charge = await prisma.propertyCharge.findFirst({
+    where: { id: chargeId },
+    include: { realEstateProperty: true },
+  })
+  if (!charge || charge.realEstateProperty.householdId !== householdId) throw new Error("Charge introuvable")
+  const propertyId = charge.realEstatePropertyId
+  await prisma.propertyCharge.delete({ where: { id: chargeId } })
+  revalidatePath(`/real-estate/${propertyId}/operations`)
+  revalidatePath(`/real-estate/${propertyId}/statement`)
+  revalidatePath("/real-estate")
+}
+
+export async function deleteLeaseUnitAction(leaseUnitId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const lease = await prisma.leaseUnit.findFirst({
+    where: { id: leaseUnitId },
+    include: { realEstateProperty: true },
+  })
+  if (!lease || lease.realEstateProperty.householdId !== householdId) throw new Error("Lot introuvable")
+  const propertyId = lease.realEstatePropertyId
+  await prisma.leaseUnit.delete({ where: { id: leaseUnitId } })
+  revalidatePath(`/real-estate/${propertyId}/operations`)
+  revalidatePath(`/real-estate/${propertyId}/statement`)
+  revalidatePath("/real-estate")
+}
+
+export async function deleteRentPaymentAction(paymentId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const payment = await prisma.rentPayment.findFirst({
+    where: { id: paymentId },
+    include: { leaseUnit: { include: { realEstateProperty: true } } },
+  })
+  if (!payment || payment.leaseUnit.realEstateProperty.householdId !== householdId) {
+    throw new Error("Encaissement introuvable")
+  }
+  const propertyId = payment.leaseUnit.realEstatePropertyId
+  await prisma.rentPayment.delete({ where: { id: paymentId } })
+  revalidatePath(`/real-estate/${propertyId}/operations`)
+  revalidatePath("/real-estate")
+}
+
+/** Supprime toutes les charges récurrentes, lots et encaissements du bien (pas le financement ni les décomptes enregistrés). */
+export async function resetPropertyOperationsAction(propertyId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const property = await prisma.realEstateProperty.findFirst({
+    where: { id: propertyId, householdId },
+    select: { id: true },
+  })
+  if (!property) throw new Error("Bien introuvable")
+  await prisma.$transaction([
+    prisma.propertyCharge.deleteMany({ where: { realEstatePropertyId: propertyId } }),
+    prisma.leaseUnit.deleteMany({ where: { realEstatePropertyId: propertyId } }),
+  ])
+  revalidatePath(`/real-estate/${propertyId}/operations`)
+  revalidatePath(`/real-estate/${propertyId}/statement`)
+  revalidatePath("/real-estate")
+}
+
 export async function generateChargeStatementAction(formData: FormData) {
   const { householdId } = await requireOwnerHousehold()
   const propertyId = String(formData.get("propertyId") ?? "")

@@ -7,6 +7,12 @@ import {
   getRealEstatePropertyDetail,
   recordRentPaymentAction,
 } from "@/app/actions/real-estate"
+import {
+  DeleteLeaseUnitButton,
+  DeletePropertyChargeButton,
+  DeleteRentPaymentButton,
+  ResetPropertyOperationsButton,
+} from "@/components/real-estate/operations-actions"
 
 export default async function PropertyOperationsPage({
   params,
@@ -25,7 +31,8 @@ export default async function PropertyOperationsPage({
             <h1 className="text-xl font-bold">{detail.property.name}</h1>
             <p className="text-sm text-muted-foreground">Étape 2/4 — Loyers encaissés et charges PPE/immeuble.</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 justify-end items-center">
+            <ResetPropertyOperationsButton propertyId={propertyId} />
             <Button asChild variant="outline" className="rounded-xl">
               <Link href={`/real-estate/${propertyId}/financing`}>Financement</Link>
             </Button>
@@ -58,8 +65,11 @@ export default async function PropertyOperationsPage({
           </form>
           <ul className="mt-3 text-sm flex flex-col gap-1">
             {detail.property.charges.map((c) => (
-              <li key={c.id} className="rounded-xl border border-border/60 px-3 py-2">
-                {c.label} · CHF {Number(c.amount).toLocaleString("fr-CH")} · {c.frequency}
+              <li key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2">
+                <span>
+                  {c.label} · CHF {Number(c.amount).toLocaleString("fr-CH")} · {c.frequency}
+                </span>
+                <DeletePropertyChargeButton chargeId={c.id} />
               </li>
             ))}
           </ul>
@@ -83,9 +93,12 @@ export default async function PropertyOperationsPage({
 
         {detail.property.leases.map((lease) => (
           <div key={lease.id} className="bg-card rounded-2xl border border-border p-4">
-            <h3 className="font-semibold text-sm">
-              {lease.label} · {lease.tenantName ?? "Sans locataire"}
-            </h3>
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-1">
+              <h3 className="font-semibold text-sm">
+                {lease.label} · {lease.tenantName ?? "Sans locataire"}
+              </h3>
+              <DeleteLeaseUnitButton leaseUnitId={lease.id} />
+            </div>
             <p className="text-xs text-muted-foreground mb-3">
               Loyer CHF {Number(lease.rentMonthly).toLocaleString("fr-CH")} + Charges CHF{" "}
               {Number(lease.chargesMonthly).toLocaleString("fr-CH")}
@@ -99,9 +112,12 @@ export default async function PropertyOperationsPage({
             </form>
             <ul className="mt-3 text-sm flex flex-col gap-1">
               {lease.rentPayments.map((p) => (
-                <li key={p.id} className="rounded-xl border border-border/60 px-3 py-2">
-                  {p.month.toISOString().slice(0, 7)} · attendu CHF {Number(p.expectedAmount).toLocaleString("fr-CH")} · reçu CHF{" "}
-                  {Number(p.receivedAmount).toLocaleString("fr-CH")} · {p.status}
+                <li key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2">
+                  <span>
+                    {p.month.toISOString().slice(0, 7)} · attendu CHF {Number(p.expectedAmount).toLocaleString("fr-CH")} · reçu CHF{" "}
+                    {Number(p.receivedAmount).toLocaleString("fr-CH")} · {p.status}
+                  </span>
+                  <DeleteRentPaymentButton paymentId={p.id} />
                 </li>
               ))}
             </ul>
