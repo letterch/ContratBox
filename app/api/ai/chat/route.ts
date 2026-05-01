@@ -4,7 +4,15 @@ import { prisma } from "@/lib/db"
 import { getMortgagePlan } from "@/lib/services/mortgage"
 import { buildHouseholdCostInsights } from "@/lib/services/household-costs"
 import { getAppFeatures } from "@/lib/services/feature-flags"
-import { AGENT_ACTION_ROADMAP, buildContractDocumentContextBlock } from "@/lib/services/document-knowledge"
+import {
+  AGENT_ACTION_ROADMAP,
+  buildAiAttachmentsContextBlock,
+  buildContractDocumentContextBlock,
+} from "@/lib/services/document-knowledge"
+import {
+  assistantReplyLanguageInstruction,
+  detectAssistantReplyLanguage,
+} from "@/lib/services/ai-chat-language"
 import {
   buildOpenRouterChatCompletionBody,
   OPENROUTER_CHAT_COMPLETIONS_URL,
@@ -15,21 +23,15 @@ const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 type ChatBody = {
   message?: string
   activeContractId?: string | null
-}
-
-function detectLanguage(message: string): "fr" | "it" | "en" {
-  const m = message.toLowerCase()
-  const italianHints = ["quando", "assicurazione", "contratto", "scadenza", "disdetta", "copertura", "rata", "ipoteca"]
-  const englishHints = ["when", "insurance", "contract", "deadline", "cancellation", "coverage", "mortgage", "rent"]
-  if (italianHints.some((w) => m.includes(w))) return "it"
-  if (englishHints.some((w) => m.includes(w))) return "en"
-  return "fr"
+  /** Imports IA (/api/ai/attachments) à inclure dans le contexte pour cette question */
+  attachmentIds?: string[] | null
 }
 
 function buildDefaultSystemPrompt() {
   return `Tu es l'assistant ContratBox, expert des contrats suisses (assurances, télécom, énergie, hypothèques, bail locatif, leasing, abonnements).
 Objectif:
 - Répondre précisément à partir des contrats du ménage (champs structurés + extraits de document quand fournis).
+- Répondre aussi à partir des « Imports IA » : fichiers PDF/images que l'utilisateur a déposés dans l'assistant (offres commerciales, projets de police, anciennes polices non encore enregistrées comme contrats). Distinction importante : une offre ou une proposition peut différer de la police définitive ; le préciser si pertinent.
 - Expliquer clairement les couvertures, exclusions, clauses de résiliation et échéances.
 - Sur les hypothèques: calculer intérêts estimés, amortissement direct/indirect, coûts par tranche.
 - Sur les baux: expliquer loyer/charges, reconduction tacite, fenêtre de résiliation.
@@ -37,7 +39,8 @@ Objectif:
 - Proposer des prochaines étapes concrètes (ex. vérifier une date, comparer une prime, préparer une résiliation) sans prétendre qu'une action a déjà été exécutée dans l'app sauf si c'est explicitement le cas.
 - Si une information manque, le dire explicitement et proposer quoi vérifier.
 - Ne jamais inventer de données non présentes.
-- Répondre dans la langue de la question de l'utilisateur: français, italien ou anglais.
+- Répondre dans la langue de la question de l'utilisateur (français, italien, anglais, allemand, portugais, espagnol, turc ou albanais / Shqip selon la langue détectée).
+- Pour les demandes de synthèse multilingue sur un même document : respecter strictement les langues demandées ; « Shqip » désigne l'albanais (code linguistique SQ).
 - Structurer les réponses de façon courte et actionnable.
 - Feuille de route actions produit (pour formulations alignées, pas d'exécution implicite): ${AGENT_ACTION_ROADMAP.join(", ")}.`
 }
@@ -129,7 +132,7 @@ export async function POST(request: Request) {
   const body = (await request.json()) as ChatBody
   const features = await getAppFeatures()
   const message = body.message?.trim()
-  const detectedLanguage = detectLanguage(message ?? "")
+  const detectedLanguage = detectAssistantReplyLanguage(message ?? "")
   if (!message) {
     return NextResponse.json({ error: "Message vide" }, { status: 400 })
   }
@@ -191,6 +194,31 @@ export async function POST(request: Request) {
     features.leaseInsightsEnabled
   )
 
+  const attachmentIdList = Array.from(
+    new Set((body.attachmentIds ?? []).filter((id): id is string => typeof id === "string" && id.length > 0))
+  ).slice(0, 8)
+
+  let attachmentsContext = ""
+  if (attachmentIdList.length > 0 && household) {
+    const attachments = await prisma.aiAssistantAttachment.findMany({
+      where: {
+        householdId: household.id,
+        id: { in: attachmentIdList },
+      },
+      select: {
+        id: true,
+        label: true,
+        kind: true,
+        extractedText: true,
+        textExtractionMeta: true,
+      },
+    })
+    const ordered = attachmentIdList
+      .map((id) => attachments.find((a) => a.id === id))
+      .filter((a): a is NonNullable<typeof a> => Boolean(a))
+    attachmentsContext = buildAiAttachmentsContextBlock(ordered)
+  }
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
@@ -214,14 +242,19 @@ export async function POST(request: Request) {
                 "Contexte contrats utilisateur (source interne ContratBox) :\n" +
                 (contractsContext || "Aucun contrat disponible."),
             },
+            ...(attachmentsContext
+              ? [
+                  {
+                    role: "system",
+                    content:
+                      "Imports IA — documents déposés dans le chat (texte extrait). Types indiqués par kind : proposal (offre/projet), policy (police/titre), other.\n" +
+                      attachmentsContext,
+                  },
+                ]
+              : []),
             {
               role: "system",
-              content:
-                detectedLanguage === "it"
-                  ? "Rispondi in italiano con chiarezza. Se mancano dati, dichiaralo esplicitamente."
-                  : detectedLanguage === "en"
-                    ? "Answer in English clearly. If data is missing, state it explicitly."
-                    : "Réponds en français clairement. Si des données manquent, indique-le explicitement.",
+              content: assistantReplyLanguageInstruction(detectedLanguage),
             },
             ...(features.globalSavingsAssistantEnabled
               ? [
@@ -253,8 +286,17 @@ export async function POST(request: Request) {
     }
 
     const sources = contractsForContext.slice(0, 3).map((c) => c.title || c.provider || c.contractType || c.id)
+    const attachmentSources =
+      attachmentIdList.length > 0 && household
+        ? (
+            await prisma.aiAssistantAttachment.findMany({
+              where: { householdId: household.id, id: { in: attachmentIdList } },
+              select: { label: true },
+            })
+          ).map((a) => `Import : ${a.label}`)
+        : []
 
-    return NextResponse.json({ answer, sources })
+    return NextResponse.json({ answer, sources: [...attachmentSources, ...sources].slice(0, 8) })
   } catch (error) {
     console.error("[ai-chat] error", error)
     return NextResponse.json({ error: "Échec de génération IA" }, { status: 500 })

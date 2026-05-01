@@ -30,6 +30,7 @@ model User {
   householdMembers HouseholdMember[]
   contracts        Contract[]
   aiChatThreads    AIChatThread[]
+  aiAssistantAttachments AiAssistantAttachment[]
   subscription     Subscription?
   auditLogs        AuditLog[]
   householdTasksCreated HouseholdTask[] @relation("HouseholdTaskCreator")
@@ -84,6 +85,7 @@ model Household {
   realEstateProperties RealEstateProperty[]
   tasks HouseholdTask[]
   administrativeItems AdministrativeItem[]
+  aiAssistantAttachments AiAssistantAttachment[]
 }
 
 model HouseholdMember {
@@ -383,6 +385,25 @@ model ChargeStatement {
 }
 
 // ——— IA ———
+/** PDF/images importés depuis l’assistant (contrats hors base ou offres assureurs) — texte extrait pour contexte chat */
+model AiAssistantAttachment {
+  id               String   @id @default(cuid())
+  householdId      String
+  createdById      String
+  label            String
+  mimeType         String
+  /** proposal | policy | other */
+  kind             String   @default("proposal")
+  extractedText    String   @db.Text
+  textExtractionMeta Json?
+  createdAt        DateTime @default(now())
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([householdId, createdAt])
+}
+
 model AIChatThread {
   id          String   @id @default(cuid())
   userId      String

@@ -3,6 +3,12 @@ import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
 /** Taille max d'un extrait document injecté dans le prompt assistant (par contrat). */
 export const DOCUMENT_CONTEXT_PER_CONTRACT_CHARS = 5200
 
+/** Budget total pour les pièces jointes importées depuis l’assistant IA (plusieurs fichiers). */
+export const DOCUMENT_CONTEXT_AI_ATTACHMENTS_TOTAL_CHARS = 28_000
+
+/** Max par pièce jointe (répartition si plusieurs imports actifs). */
+export const DOCUMENT_CONTEXT_PER_AI_ATTACHMENT_CHARS = 12_000
+
 /** Taille cible d'un chunk pour futur index vectoriel / RAG par document. */
 export const DOCUMENT_RAG_CHUNK_TARGET_CHARS = 3400
 
@@ -50,6 +56,27 @@ export function buildContractDocumentContextBlock(
       : ""
   const body = text.length > maxChars ? `${text.slice(0, maxChars)}\n[… texte tronqué …]` : text
   return metaLine ? `${metaLine}\n${body}` : body
+}
+
+/**
+ * Contexte combiné pour les imports assistant (offres / polices hors contrats enregistrés).
+ */
+export function buildAiAttachmentsContextBlock(
+  attachments: Array<{ id: string; label: string; extractedText: string | null; textExtractionMeta: unknown }>,
+  maxTotalChars = DOCUMENT_CONTEXT_AI_ATTACHMENTS_TOTAL_CHARS
+): string {
+  const list = attachments.filter((a) => (a.extractedText ?? "").trim().length > 0)
+  if (list.length === 0) return ""
+  const per = Math.min(
+    DOCUMENT_CONTEXT_PER_AI_ATTACHMENT_CHARS,
+    Math.floor(maxTotalChars / Math.max(1, list.length))
+  )
+  const parts = list.map((a, i) => {
+    const block = buildContractDocumentContextBlock(a.extractedText, a.textExtractionMeta, per)
+    return `[Import IA #${i + 1} id=${a.id} fichier="${a.label}"]\n${block}`
+  })
+  const joined = parts.join("\n\n---\n\n")
+  return joined.length > maxTotalChars ? `${joined.slice(0, maxTotalChars)}\n[… imports tronqués …]` : joined
 }
 
 /**
