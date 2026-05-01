@@ -5,6 +5,12 @@ import { extractTextFromFile } from "@/lib/services/ocr"
 
 const MAX_BYTES = 12 * 1024 * 1024
 const MAX_ATTACHMENTS_PER_HOUSEHOLD = 24
+const MAX_FILES_PER_REQUEST = 12
+
+function minExtractedChars(): number {
+  const n = Number(process.env.AI_ATTACHMENT_MIN_EXTRACT_CHARS ?? "22")
+  return Number.isFinite(n) ? Math.max(12, Math.min(500, Math.floor(n))) : 22
+}
 
 const ALLOWED_MIME = new Set([
   "application/pdf",
@@ -75,76 +81,137 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Formulaire invalide" }, { status: 400 })
   }
 
-  const file = formData.get("file")
-  if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ error: "Fichier manquant" }, { status: 400 })
-  }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Fichier trop volumineux (max 12 Mo)" }, { status: 400 })
-  }
+  const fromMulti = formData
+    .getAll("files")
+    .filter((f): f is File => f instanceof File && f.size > 0)
+  const legacySingle = formData.get("file")
+  const files: File[] =
+    fromMulti.length > 0
+      ? fromMulti.slice(0, MAX_FILES_PER_REQUEST)
+      : legacySingle instanceof File && legacySingle.size > 0
+        ? [legacySingle]
+        : []
 
-  const mimeType = file.type || "application/octet-stream"
-  if (!ALLOWED_MIME.has(mimeType)) {
-    return NextResponse.json({ error: "Format non pris en charge (PDF, JPG, PNG, WebP)" }, { status: 400 })
+  if (files.length === 0) {
+    return NextResponse.json({ error: "Fichier manquant" }, { status: 400 })
   }
 
   const kindRaw = String(formData.get("kind") ?? "proposal").trim()
   const kind = ["proposal", "policy", "other"].includes(kindRaw) ? kindRaw : "proposal"
+  const batchPrefix = String(formData.get("batchPrefix") ?? "").trim().slice(0, 120)
 
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const { text: extractedText, meta: textExtractionMeta } = await extractTextFromFile(buffer, mimeType)
-  const trimmed = extractedText.trim()
-  if (!trimmed || trimmed.length < 40) {
-    return NextResponse.json(
-      {
-        error:
-          "Peu ou pas de texte extrait (PDF scanné faible qualité ou image vide). Réessayez avec un PDF texte ou une image plus nette.",
-      },
-      { status: 422 }
-    )
+  const minChars = minExtractedChars()
+  const attachmentsOut: Array<{
+    id: string
+    label: string
+    mimeType: string
+    kind: string
+    createdAt: string
+    charCount: number
+    excerpt: string
+  }> = []
+  const errorsOut: Array<{ name: string; error: string }> = []
+
+  const trimEvictOldest = async () => {
+    while (
+      (await prisma.aiAssistantAttachment.count({ where: { householdId: household.id } })) >= MAX_ATTACHMENTS_PER_HOUSEHOLD
+    ) {
+      const oldest = await prisma.aiAssistantAttachment.findFirst({
+        where: { householdId: household.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      })
+      if (!oldest) break
+      await prisma.aiAssistantAttachment.delete({ where: { id: oldest.id } })
+    }
   }
 
-  while (
-    (await prisma.aiAssistantAttachment.count({ where: { householdId: household.id } })) >= MAX_ATTACHMENTS_PER_HOUSEHOLD
-  ) {
-    const oldest = await prisma.aiAssistantAttachment.findFirst({
-      where: { householdId: household.id },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    if (file.size > MAX_BYTES) {
+      errorsOut.push({ name: file.name, error: "Fichier trop volumineux (max 12 Mo)" })
+      continue
+    }
+    const mimeType = file.type || "application/octet-stream"
+    if (!ALLOWED_MIME.has(mimeType)) {
+      errorsOut.push({
+        name: file.name,
+        error: "Format non pris en charge (PDF, JPG, PNG, WebP)",
+      })
+      continue
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer())
+    const { text: extractedText, meta: textExtractionMeta } = await extractTextFromFile(buffer, mimeType, {
+      aggressivePdfOcr: true,
     })
-    if (!oldest) break
-    await prisma.aiAssistantAttachment.delete({ where: { id: oldest.id } })
-  }
+    const trimmed = extractedText.trim()
+    if (!trimmed || trimmed.length < minChars) {
+      errorsOut.push({
+        name: file.name,
+        error:
+          "Peu ou pas de texte extrait. Pour un PDF constitué d’images, essayez OCR_MODE=always côté serveur ou un fichier plus net. Vérifiez aussi que le document n’est pas vide ou protégé.",
+      })
+      continue
+    }
 
-  const label = String(formData.get("label") ?? file.name ?? "document").slice(0, 240)
+    await trimEvictOldest()
 
-  const row = await prisma.aiAssistantAttachment.create({
-    data: {
-      householdId: household.id,
-      createdById: session.user.id,
-      label,
-      mimeType,
-      kind,
-      extractedText: trimmed.slice(0, 950_000),
-      textExtractionMeta: textExtractionMeta ? (textExtractionMeta as object) : undefined,
-    },
-    select: {
-      id: true,
-      label: true,
-      mimeType: true,
-      kind: true,
-      createdAt: true,
-    },
-  })
+    const defaultLabel = String(formData.get("label") ?? "").trim()
+    const partLabel =
+      batchPrefix && files.length > 1
+        ? `${batchPrefix} · partie ${i + 1} — ${file.name}`
+        : batchPrefix && files.length === 1
+          ? `${batchPrefix} — ${file.name}`
+          : defaultLabel || file.name || "document"
+    const label = partLabel.slice(0, 240)
 
-  return NextResponse.json({
-    attachment: {
+    const row = await prisma.aiAssistantAttachment.create({
+      data: {
+        householdId: household.id,
+        createdById: session.user.id,
+        label,
+        mimeType,
+        kind,
+        extractedText: trimmed.slice(0, 950_000),
+        textExtractionMeta: textExtractionMeta ? (textExtractionMeta as object) : undefined,
+      },
+      select: {
+        id: true,
+        label: true,
+        mimeType: true,
+        kind: true,
+        createdAt: true,
+      },
+    })
+
+    attachmentsOut.push({
       ...row,
       createdAt: row.createdAt.toISOString(),
       charCount: trimmed.length,
       excerpt: trimmed.slice(0, 160).replace(/\s+/g, " ") + (trimmed.length > 160 ? "…" : ""),
-    },
-  })
+    })
+  }
+
+  if (attachmentsOut.length === 0 && errorsOut.length > 0) {
+    const first = errorsOut[0]
+    return NextResponse.json(
+      files.length === 1
+        ? { error: first.error }
+        : { error: first.error, errors: errorsOut },
+      { status: 422 }
+    )
+  }
+
+  const payload: Record<string, unknown> = {
+    attachments: attachmentsOut,
+  }
+  if (errorsOut.length) payload.errors = errorsOut
+  if (attachmentsOut.length === 1) {
+    payload.attachment = attachmentsOut[0]
+  }
+
+  return NextResponse.json(payload)
 }
 
 export async function DELETE(request: Request) {

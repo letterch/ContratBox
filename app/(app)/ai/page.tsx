@@ -84,6 +84,7 @@ export default function AIPage() {
   const [attachments, setAttachments] = useState<AiAttachmentItem[]>([])
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>([])
   const [uploadKind, setUploadKind] = useState<"proposal" | "policy" | "other">("proposal")
+  const [uploadBatchPrefix, setUploadBatchPrefix] = useState("")
   const [uploading, setUploading] = useState(false)
   const [activeContract, setActiveContract] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -116,22 +117,42 @@ export default function AIPage() {
   }
 
   const onPickFile = async (files: FileList | null) => {
-    const file = files?.[0]
-    if (!file || uploading) return
+    const list = files?.length ? Array.from(files) : []
+    if (!list.length || uploading) return
     setUploading(true)
     try {
       const fd = new FormData()
-      fd.set("file", file)
+      list.forEach((f) => fd.append("files", f))
       fd.set("kind", uploadKind)
+      const prefix = uploadBatchPrefix.trim()
+      if (prefix) fd.set("batchPrefix", prefix)
       const res = await fetch("/api/ai/attachments", { method: "POST", body: fd })
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data?.error ?? "Échec import")
       }
-      const list = await fetchAiAttachments()
-      setAttachments(list)
-      const nid = data?.attachment?.id as string | undefined
-      if (nid) setSelectedAttachmentIds((prev) => [...prev, nid])
+      const refreshed = await fetchAiAttachments()
+      setAttachments(refreshed)
+      const newIds: string[] = Array.isArray(data?.attachments)
+        ? data.attachments.map((a: { id: string }) => a.id).filter(Boolean)
+        : data?.attachment?.id
+          ? [data.attachment.id as string]
+          : []
+      if (newIds.length) {
+        setSelectedAttachmentIds((prev) => [...prev, ...newIds.filter((id) => !prev.includes(id))])
+      }
+      const errs = Array.isArray(data?.errors) ? data.errors : []
+      if (errs.length) {
+        const detail = errs.map((e: { name: string; error: string }) => `• ${e.name}: ${e.error}`).join("\n")
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `Certains fichiers n’ont pas pu être importés :\n${detail}`,
+            sources: [],
+          },
+        ])
+      }
     } catch (e) {
       setMessages((prev) => [
         ...prev,
@@ -211,6 +232,7 @@ export default function AIPage() {
       <input
         ref={fileRef}
         type="file"
+        multiple
         accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf"
         className="sr-only"
         aria-hidden
@@ -234,7 +256,7 @@ export default function AIPage() {
         <div className="p-4 border-b border-border space-y-3">
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Importer une offre ou un contrat</p>
           <p className="text-[10px] text-muted-foreground leading-snug">
-            PDF ou image : extraction du texte pour analyse et résumés multilingues. Les fichiers importés restent dans cet assistant (pas ajoutés automatiquement à « Mes contrats »).
+            PDF ou image : extraction du texte pour analyse et résumés multilingues. Vous pouvez sélectionner plusieurs PDF (ex. plusieurs volumes de conditions générales pour une même police). Les fichiers restent dans cet assistant (pas ajoutés à « Mes contrats »).
           </p>
           <select
             value={uploadKind}
@@ -245,6 +267,19 @@ export default function AIPage() {
             <option value="policy">Police ou titre contractuel</option>
             <option value="other">Autre document</option>
           </select>
+          <div className="space-y-1">
+            <label htmlFor="ai-batch-prefix" className="text-[10px] font-medium text-muted-foreground">
+              Libellé dossier (optionnel)
+            </label>
+            <Input
+              id="ai-batch-prefix"
+              value={uploadBatchPrefix}
+              onChange={(e) => setUploadBatchPrefix(e.target.value)}
+              placeholder="Ex. Mobiliar RC 2024 — CG"
+              className="h-8 text-xs rounded-xl"
+              disabled={uploading}
+            />
+          </div>
           <Button
             type="button"
             variant="outline"
@@ -253,7 +288,7 @@ export default function AIPage() {
             onClick={() => fileRef.current?.click()}
           >
             {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {uploading ? "Extraction du texte…" : "Choisir un fichier"}
+            {uploading ? "Extraction du texte…" : "Choisir un ou plusieurs fichiers"}
           </Button>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider pt-1">Imports pour l’analyse</p>
           <div className="flex flex-col gap-1 max-h-52 overflow-y-auto pr-0.5">
@@ -363,28 +398,38 @@ export default function AIPage() {
           </div>
         </div>
 
-        <div className="lg:hidden flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border bg-muted/25">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="rounded-xl h-8 text-xs gap-1"
+        <div className="lg:hidden px-4 py-2 border-b border-border bg-muted/25 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="rounded-xl h-8 text-xs gap-1"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+              Importer (multi)
+            </Button>
+            <select
+              value={uploadKind}
+              onChange={(e) => setUploadKind(e.target.value as "proposal" | "policy" | "other")}
+              className="rounded-lg border border-border bg-background px-2 py-1 text-[11px]"
+            >
+              <option value="proposal">Offre</option>
+              <option value="policy">Police</option>
+              <option value="other">Autre</option>
+            </select>
+            <span className="text-[10px] text-muted-foreground">{selectedAttachmentIds.length} fichier(s) coché(s)</span>
+          </div>
+          <Input
+            value={uploadBatchPrefix}
+            onChange={(e) => setUploadBatchPrefix(e.target.value)}
+            placeholder="Libellé dossier (optionnel)"
+            className="h-8 text-[11px] rounded-lg"
             disabled={uploading}
-            onClick={() => fileRef.current?.click()}
-          >
-            {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-            Importer
-          </Button>
-          <select
-            value={uploadKind}
-            onChange={(e) => setUploadKind(e.target.value as "proposal" | "policy" | "other")}
-            className="rounded-lg border border-border bg-background px-2 py-1 text-[11px]"
-          >
-            <option value="proposal">Offre</option>
-            <option value="policy">Police</option>
-            <option value="other">Autre</option>
-          </select>
-          <span className="text-[10px] text-muted-foreground">{selectedAttachmentIds.length} fichier(s) coché(s)</span>
+            aria-label="Libellé dossier pour regrouper plusieurs PDF"
+          />
         </div>
 
         {attachments.length > 0 ? (
