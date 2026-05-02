@@ -18,14 +18,34 @@ const urgencyStyles: Record<string, { badge: string; label: string }> = {
 }
 
 export function TopActionsBlock({ actions }: { actions: ActionableRecommendation[] }) {
-  if (!actions.length) return null
-
   return (
     <div className="rounded-2xl border border-border bg-card shadow-card p-5">
       <div className="flex items-center gap-2 mb-4">
         <TrendingUp className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Top 3 actions · argent</h3>
       </div>
+      {!actions.length ? (
+        <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center space-y-3">
+          <p className="text-sm font-medium text-foreground">Aucune action détectée pour le moment</p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            Analysez un contrat pour obtenir vos recommandations, ou ajoutez des contrats avec renouvellement, délai de résiliation ou échéance hypothécaire dans les 60 prochains jours.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 pt-1">
+            <Link
+              href="/ai"
+              className="inline-flex items-center justify-center rounded-xl bg-primary text-primary-foreground px-4 py-2 text-xs font-semibold hover:opacity-95"
+            >
+              Ouvrir l’assistant IA
+            </Link>
+            <Link
+              href="/upload"
+              className="inline-flex items-center justify-center rounded-xl border border-border bg-background px-4 py-2 text-xs font-semibold hover:bg-accent"
+            >
+              Importer un contrat
+            </Link>
+          </div>
+        </div>
+      ) : (
       <ul className="flex flex-col gap-3">
         {actions.map((a, i) => {
           const u = urgencyStyles[a.urgency] ?? urgencyStyles.low
@@ -67,6 +87,7 @@ export function TopActionsBlock({ actions }: { actions: ActionableRecommendation
           )
         })}
       </ul>
+      )}
     </div>
   )
 }

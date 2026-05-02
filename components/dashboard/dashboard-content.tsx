@@ -11,6 +11,7 @@ import { TasksPreview } from "@/components/dashboard/tasks-preview"
 import { TimelinePreview } from "@/components/dashboard/timeline-preview"
 import { TopActionsBlock } from "@/components/decision/top-actions-block"
 import { RemindersPanel } from "@/components/dashboard/reminders-panel"
+import { DashboardEngagementStrip } from "@/components/dashboard/dashboard-engagement-strip"
 import type { TimelineEvent } from "@/lib/services/reminder-timeline"
 import type { ActionableRecommendation, NextStepBannerPayload } from "@/lib/services/recommendation-engine"
 import type { PendingReminderLite } from "@/lib/services/reminder-sync"
@@ -113,6 +114,7 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
         contractCount={filteredContracts.length}
         alertCount={cancellationContracts.length}
       />
+      <DashboardEngagementStrip />
       <TopActionsBlock actions={filteredTopActions} />
       <RemindersPanel reminders={(data?.pendingReminders ?? []) as Parameters<typeof RemindersPanel>[0]["reminders"]} />
       <CostInsightsPanel insights={data?.costInsights as Parameters<typeof CostInsightsPanel>[0]["insights"]} />

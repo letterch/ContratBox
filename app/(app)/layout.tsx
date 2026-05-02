@@ -40,7 +40,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         planLabel={planLabel}
       />
       <main className="flex-1 min-w-0 pb-20 lg:pb-0">
-        <NextStepBanner payload={dashboard?.nextStepBanner ?? null} />
+        <NextStepBanner
+          payload={dashboard?.nextStepBanner ?? null}
+          showEmptyWhenNoPayload={Boolean(dashboard?.household && !dashboard?.nextStepBanner)}
+        />
         {children}
       </main>
       <MobileNav navItems={mobileNav} />

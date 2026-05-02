@@ -19,8 +19,6 @@ export function RemindersPanel({ reminders }: { reminders: Row[] }) {
   const router = useRouter()
   const [pending, start] = useTransition()
 
-  if (!reminders.length) return null
-
   const onDismiss = (id: string) => {
     start(async () => {
       await dismissReminder(id)
@@ -41,6 +39,22 @@ export function RemindersPanel({ reminders }: { reminders: Row[] }) {
         <h3 className="text-sm font-semibold text-foreground">Alertes &amp; échéances</h3>
         <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Rappels actifs</span>
       </div>
+      {!reminders.length ? (
+        <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-6 text-center space-y-3">
+          <p className="text-sm font-medium text-foreground">Aucun rappel en attente</p>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
+            Les rappels apparaissent quand une échéance (renouvellement, résiliation, hypothèque) est détectée. Vous pouvez aussi en créer depuis l’assistant après une analyse.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 pt-1">
+            <Button variant="default" size="sm" className="rounded-xl h-9 text-xs" asChild>
+              <Link href="/ai">Assistant IA</Link>
+            </Button>
+            <Button variant="outline" size="sm" className="rounded-xl h-9 text-xs" asChild>
+              <Link href="/upload">Importer un contrat</Link>
+            </Button>
+          </div>
+        </div>
+      ) : (
       <ul className="flex flex-col gap-3">
         {reminders.map((r) => (
           <li
@@ -91,6 +105,7 @@ export function RemindersPanel({ reminders }: { reminders: Row[] }) {
           </li>
         ))}
       </ul>
+      )}
     </div>
   )
 }
