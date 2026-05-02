@@ -25,6 +25,11 @@ export async function getContractById(contractId: string, userId: string) {
       household: true,
       member: true,
       documents: true,
+      reminders: {
+        where: { status: "pending" },
+        orderBy: { dueDate: "asc" },
+      },
+      decisionInsight: true,
     },
   })
   if (!contract || contract.household.ownerId !== userId) return null

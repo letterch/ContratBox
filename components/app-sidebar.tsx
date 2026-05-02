@@ -4,17 +4,19 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { signOut } from "next-auth/react"
 import { cn } from "@/lib/utils"
-import { ChevronDown, Bell, LogOut, Home } from "lucide-react"
+import { ChevronDown, LogOut, Home } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import type { Session } from "next-auth"
 import type { NavItemDTO } from "@/lib/services/navigation"
 import { NAV_ICON_COMPONENTS } from "@/components/nav-config"
+import { RemindersBell } from "@/components/notifications/reminders-bell"
 
 type AppSidebarProps = {
   session: Session | null
   householdName?: string | null
   contractCount?: number | null
   memberCount?: number | null
+  pendingReminderCount?: number
   /** Menu calculé côté serveur via `buildMainNavItems` / `toDesktopNavDtos` */
   navItems: NavItemDTO[]
   planLabel: string
@@ -27,6 +29,7 @@ export function AppSidebar({
   memberCount = 0,
   navItems,
   planLabel,
+  pendingReminderCount = 0,
 }: AppSidebarProps) {
   const pathname = usePathname()
   const user = session?.user
@@ -94,15 +97,15 @@ export function AppSidebar({
         })}
       </nav>
 
-      {/* Alerts banner */}
-      <div className="px-4 pb-3">
-        <div className="rounded-xl bg-warning/10 border border-warning/20 px-3 py-2.5 flex items-start gap-2.5">
-          <Bell className="w-3.5 h-3.5 text-warning mt-0.5 flex-shrink-0" />
-          <div>
-            <p className="text-sidebar-foreground text-xs font-medium">Échéances à venir</p>
-            <p className="text-sidebar-foreground/50 text-[10px] mt-0.5">Consultez le calendrier du dashboard</p>
-          </div>
+      {/* Rappels in-app */}
+      <div className="px-4 pb-3 flex items-center justify-between gap-2">
+        <div className="rounded-xl bg-warning/10 border border-warning/20 px-3 py-2 flex-1 min-w-0">
+          <p className="text-sidebar-foreground text-xs font-medium truncate">Rappels</p>
+          <p className="text-sidebar-foreground/50 text-[10px] mt-0.5 line-clamp-2">
+            {pendingReminderCount > 0 ? `${pendingReminderCount} action(s) suggérée(s)` : "Aucune alerte active"}
+          </p>
         </div>
+        <RemindersBell initialCount={pendingReminderCount} />
       </div>
 
       {/* User */}

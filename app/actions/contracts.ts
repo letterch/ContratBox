@@ -228,30 +228,70 @@ export async function saveContractFromUpload(data: SaveContractInput) {
       if (!row?.endDate) return null
       const endDate = new Date(String(row.endDate))
       if (Number.isNaN(endDate.getTime())) return null
-      const triggerAt = new Date(endDate)
-      triggerAt.setDate(triggerAt.getDate() - 90)
+      const dueDate = new Date(endDate)
+      dueDate.setDate(dueDate.getDate() - 90)
       return {
+        householdId: contract.householdId,
         contractId: contract.id,
-        type: "mortgage_maturity",
-        triggerAt,
-      } as const
+        type: "mortgage_expiry",
+        title: `Hypothèque — avant échéance (${contract.provider ?? "tranche"})`,
+        description: "Rappel automatique : anticipez la fin de tranche ou la renégociation.",
+        dueDate,
+        urgencyLevel: "medium",
+        status: "pending" as const,
+        source: "contract_upload",
+        dedupeKey: `contract_upload:mortgage_tranche:${contract.id}:${dueDate.toISOString().slice(0, 10)}:${String(row?.name ?? "")}`,
+      }
     })
-    .filter((x): x is { contractId: string; type: "mortgage_maturity"; triggerAt: Date } => Boolean(x))
+    .filter(
+      (
+        x
+      ): x is {
+        householdId: string
+        contractId: string
+        type: string
+        title: string
+        description: string
+        dueDate: Date
+        urgencyLevel: string
+        status: "pending"
+        source: string
+        dedupeKey: string
+      } => Boolean(x)
+    )
 
   if (reminderRows.length) {
-    await prisma.reminder.createMany({ data: reminderRows })
+    for (const row of reminderRows) {
+      const exists = await prisma.reminder.findFirst({
+        where: { householdId: row.householdId, dedupeKey: row.dedupeKey, status: { in: ["pending", "sent"] } },
+      })
+      if (!exists) await prisma.reminder.create({ data: row })
+    }
   } else if (data.maturityDate) {
     const endDate = new Date(data.maturityDate)
     if (!Number.isNaN(endDate.getTime())) {
-      const triggerAt = new Date(endDate)
-      triggerAt.setDate(triggerAt.getDate() - 90)
-      await prisma.reminder.create({
-        data: {
-          contractId: contract.id,
-          type: "mortgage_maturity",
-          triggerAt,
-        },
+      const dueDate = new Date(endDate)
+      dueDate.setDate(dueDate.getDate() - 90)
+      const dedupeKey = `contract_upload:mortgage:${contract.id}:${dueDate.toISOString().slice(0, 10)}`
+      const exists = await prisma.reminder.findFirst({
+        where: { householdId: contract.householdId, dedupeKey, status: { in: ["pending", "sent"] } },
       })
+      if (!exists) {
+        await prisma.reminder.create({
+          data: {
+            householdId: contract.householdId,
+            contractId: contract.id,
+            type: "mortgage_expiry",
+            title: `Hypothèque — avant échéance (${contract.provider ?? "contrat"})`,
+            description: "Rappel automatique lié à la date d’échéance déclarée.",
+            dueDate,
+            urgencyLevel: "medium",
+            status: "pending",
+            source: "contract_upload",
+            dedupeKey,
+          },
+        })
+      }
     }
   }
 
@@ -272,16 +312,29 @@ export async function saveContractFromUpload(data: SaveContractInput) {
               ? Math.round(extractionRaw.leaseNoticeValue * 365)
               : Math.round(extractionRaw.leaseNoticeValue)
           : null)
-      const triggerAt = noticeDays
+      const dueDate = noticeDays
         ? new Date(leaseEndDate.getTime() - noticeDays * 24 * 60 * 60 * 1000)
         : new Date(leaseEndDate.getTime() - 60 * 24 * 60 * 60 * 1000)
-      await prisma.reminder.create({
-        data: {
-          contractId: contract.id,
-          type: "lease_notice_window",
-          triggerAt,
-        },
+      const dedupeKey = `contract_upload:lease:${contract.id}:${dueDate.toISOString().slice(0, 10)}`
+      const exists = await prisma.reminder.findFirst({
+        where: { householdId: contract.householdId, dedupeKey, status: { in: ["pending", "sent"] } },
       })
+      if (!exists) {
+        await prisma.reminder.create({
+          data: {
+            householdId: contract.householdId,
+            contractId: contract.id,
+            type: "cancellation_deadline",
+            title: `Bail — préavis / échéance (${contract.provider ?? "loyer"})`,
+            description: "Rappel automatique basé sur la fin de bail ou le préavis estimé.",
+            dueDate,
+            urgencyLevel: "medium",
+            status: "pending",
+            source: "contract_upload",
+            dedupeKey,
+          },
+        })
+      }
     }
   }
 

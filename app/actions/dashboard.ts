@@ -10,6 +10,16 @@ import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 import { getAccessContextForUser, accessCanUseModule } from "@/lib/services/access-context"
 import { getDashboardTaskPreview } from "@/lib/services/household-task"
 import { buildHouseholdTimeline } from "@/lib/services/reminder-timeline"
+import {
+  buildNextStepBanner,
+  buildTopActionableRecommendations,
+} from "@/lib/services/recommendation-engine"
+import { buildContractTriggerEvents } from "@/lib/services/trigger-engine"
+import {
+  countPendingReminders,
+  getPendingRemindersForHousehold,
+  syncDecisionTriggersToReminders,
+} from "@/lib/services/reminder-sync"
 
 export async function getDashboardData() {
   const session = await auth()
@@ -33,16 +43,11 @@ export async function getDashboardData() {
     accessCtx && accessCtx.household?.id === household.id && accessCanUseModule(accessCtx, "module_tasks")
       ? await getDashboardTaskPreview(household.id, session.user.id, 6)
       : []
-  const timelinePreview = await buildHouseholdTimeline({
-    householdId: household.id,
-    now,
-    daysAhead: 120,
-    take: 8,
-  })
-
   const features = await getAppFeatures()
   const in30Days = new Date(now)
   in30Days.setDate(in30Days.getDate() + 30)
+  const in60Days = new Date(now)
+  in60Days.setDate(in60Days.getDate() + 60)
   const getAlertDate = (contract: {
     renewalDate?: Date | null
     maturityDate?: Date | null
@@ -55,7 +60,7 @@ export async function getDashboardData() {
       const alertDate = getAlertDate(c)
       return { contract: c, alertDate }
     })
-    .filter(({ alertDate }) => Boolean(alertDate && alertDate >= now && alertDate <= in30Days))
+    .filter(({ alertDate }) => Boolean(alertDate && alertDate >= now && alertDate <= in60Days))
     .map(({ contract, alertDate }) => ({
       ...contract,
       renewalDate: contract.renewalDate ?? alertDate ?? null,
@@ -77,7 +82,7 @@ export async function getDashboardData() {
     return { ...c, cancellationDeadline: derived }
   })
   const contractsInCancellationWindow = contractsWithDerivedDeadline.filter(
-    (c) => c.cancellationDeadline && c.cancellationDeadline >= now && c.cancellationDeadline <= in30Days
+    (c) => c.cancellationDeadline && c.cancellationDeadline >= now && c.cancellationDeadline <= in60Days
   )
   const mortgageAlerts = getMortgageAlerts(contractsWithDerivedDeadline, 180)
 
@@ -107,6 +112,24 @@ export async function getDashboardData() {
     }
   )
   let realEstateIncomeMonthly = 0
+  const topActions = buildTopActionableRecommendations(
+    contractsWithDerivedDeadline as Parameters<typeof buildTopActionableRecommendations>[0],
+    features.globalSavingsAssistantEnabled ? costInsights : null
+  )
+  const nextStepBanner = buildNextStepBanner(topActions)
+  const decisionTriggerEvents = buildContractTriggerEvents(
+    contractsWithDerivedDeadline as Parameters<typeof buildContractTriggerEvents>[0]
+  )
+  await syncDecisionTriggersToReminders(household.id, decisionTriggerEvents)
+  const pendingReminders = await getPendingRemindersForHousehold(household.id, 16)
+  const pendingReminderCount = await countPendingReminders(household.id)
+  const timelinePreview = await buildHouseholdTimeline({
+    householdId: household.id,
+    now,
+    daysAhead: 120,
+    take: 8,
+  })
+
   let realEstateChargesMonthly = 0
   for (const c of household.contracts) {
     if (c.category !== "rent_lease" && c.category !== "mortgage") continue
@@ -148,6 +171,11 @@ export async function getDashboardData() {
     contracts: contractsWithDerivedDeadline,
     taskPreview,
     timelinePreview,
+    topActions,
+    nextStepBanner,
+    decisionTriggerEvents,
+    pendingReminders,
+    pendingReminderCount,
   }
 }
 

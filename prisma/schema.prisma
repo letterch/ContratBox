@@ -86,6 +86,7 @@ model Household {
   tasks HouseholdTask[]
   administrativeItems AdministrativeItem[]
   aiAssistantAttachments AiAssistantAttachment[]
+  reminders Reminder[]
 }
 
 model HouseholdMember {
@@ -159,6 +160,25 @@ model Contract {
   reminders  Reminder[]
   tasks      HouseholdTask[]
   convertedFromInboxItems AdministrativeItem[] @relation("AdministrativeItemConvertedContract")
+  decisionInsight ContractDecisionInsight?
+}
+
+/// Snapshot décisionnel / économies — alimenté par règles + IA (optionnel)
+model ContractDecisionInsight {
+  id                      String   @id @default(cuid())
+  contractId              String   @unique
+  estimatedImpactChfYear Decimal  @default(0) @db.Decimal(12, 2)
+  riskLevel               String   @default("low") // low | medium | high
+  nextAction              String   @default("") @db.Text
+  canCancelNow            Boolean  @default(false)
+  priorityScore           Int      @default(0) // 0–100
+  urgencyLevel            String   @default("low") // low | medium | high
+  recommendationKind     String?  // renegotiate | cancel | switch_provider | keep | none
+  signals                 Json?
+  computedAt              DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 }
 
 model Document {
@@ -277,6 +297,7 @@ model RealEstateProperty {
   charges PropertyCharge[]
   chargeStatements ChargeStatement[]
   tasks HouseholdTask[]
+  reminders Reminder[]
 
   @@index([householdId, isActive])
 }
@@ -456,16 +477,35 @@ model Subscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// ——— Rappels ———
+// ——— Rappels (alertes actionnables, sync trigger_engine + autres sources) ———
 model Reminder {
-  id           String    @id @default(cuid())
-  contractId   String
-  type         String    // cancellation_window | renewal_approaching | expiring_soon | mortgage_maturity
-  triggerAt    DateTime  @db.Date
-  sentAt       DateTime?
-  createdAt    DateTime  @default(now())
+  id                     String    @id @default(cuid())
+  householdId            String
+  contractId             String?
+  propertyId             String?
 
-  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  type                   String // contract_renewal | cancellation_deadline | mortgage_expiry | savings_opportunity
+  title                  String
+  description            String    @db.Text
+  dueDate                DateTime  @db.Date
+  urgencyLevel           String    @default("medium") // low | medium | high
+  estimatedImpactChfYear Decimal?  @db.Decimal(12, 2)
+  status                 String    @default("pending") // pending | sent | dismissed | completed
+  source                 String    @default("trigger_engine")
+  /** Idempotence sync (ex. trigger_engine:mortgage_expiry:contractId:2026-01-01:Tranche1) */
+  dedupeKey              String?
+
+  sentAt                 DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  contract  Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  property  RealEstateProperty? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, status, dueDate])
+  @@index([contractId, status])
+  @@index([dedupeKey])
 }
 
 // ——— Audit / admin ———

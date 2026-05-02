@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { addDays } from "date-fns"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -20,6 +23,9 @@ import {
   FileText,
 } from "lucide-react"
 import { MULTILINGUAL_SUMMARY_PROMPT } from "@/lib/services/ai-chat-language"
+import type { ContractDecisionAnalysisPayload } from "@/lib/schemas/contract-decision-analysis"
+import { DecisionInsightCard } from "@/components/ai/decision-insight-card"
+import { createManualReminderFromContract } from "@/app/actions/reminders"
 
 const suggestions = [
   "Quel contrat puis-je résilier ce mois?",
@@ -76,7 +82,14 @@ async function fetchAiAttachments(): Promise<AiAttachmentItem[]> {
   return Array.isArray(data?.attachments) ? data.attachments : []
 }
 
+type DecisionState = {
+  insight: ContractDecisionAnalysisPayload
+  priorityScore: number
+  nextLetterUrl: string
+}
+
 export default function AIPage() {
+  const router = useRouter()
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
@@ -87,6 +100,8 @@ export default function AIPage() {
   const [uploadBatchPrefix, setUploadBatchPrefix] = useState("")
   const [uploading, setUploading] = useState(false)
   const [activeContract, setActiveContract] = useState<string | null>(null)
+  const [decision, setDecision] = useState<DecisionState | null>(null)
+  const [analyzingDecision, setAnalyzingDecision] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -104,6 +119,50 @@ export default function AIPage() {
   useEffect(() => {
     fetchAiAttachments().then(setAttachments).catch(() => setAttachments([]))
   }, [])
+
+  useEffect(() => {
+    setDecision(null)
+  }, [activeContract])
+
+  const analyzeActiveContract = async () => {
+    if (!activeContract) return
+    setAnalyzingDecision(true)
+    try {
+      const res = await fetch(`/api/contracts/${activeContract}/analyze-decision`, { method: "POST" })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Analyse impossible")
+      }
+      setDecision({
+        insight: data.insight as ContractDecisionAnalysisPayload,
+        priorityScore: Number(data.priorityScore) || 0,
+        nextLetterUrl: String(data.nextLetterUrl ?? ""),
+      })
+      toast.success("Analyse enregistrée sur le contrat")
+      router.refresh()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Analyse impossible")
+    } finally {
+      setAnalyzingDecision(false)
+    }
+  }
+
+  const onCreateReminderFromInsight = async () => {
+    if (!activeContract || !decision) return
+    const due = addDays(new Date(), 21)
+    const r = await createManualReminderFromContract({
+      contractId: activeContract,
+      title: "Rappel — suivi contrat",
+      description: decision.insight.nextAction.slice(0, 1500),
+      dueDate: due.toISOString().slice(0, 10),
+    })
+    if (r.ok) {
+      toast.success("Rappel créé")
+      router.refresh()
+    } else {
+      toast.error(r.error ?? "Impossible de créer le rappel")
+    }
+  }
 
   const toggleAttachment = (id: string) => {
     setSelectedAttachmentIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -357,6 +416,30 @@ export default function AIPage() {
             })}
           </div>
         </div>
+
+        {activeContract && (
+          <div className="p-4 border-t border-border space-y-3">
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full rounded-xl h-9 text-xs gap-2"
+              disabled={analyzingDecision}
+              onClick={analyzeActiveContract}
+            >
+              {analyzingDecision ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              Analyser ce contrat
+            </Button>
+            {decision && (
+              <DecisionInsightCard
+                contractId={activeContract}
+                insight={decision.insight}
+                priorityScore={decision.priorityScore}
+                nextLetterUrl={decision.nextLetterUrl}
+                onCreateReminder={onCreateReminderFromInsight}
+              />
+            )}
+          </div>
+        )}
 
         {(activeContract || selectedAttachmentIds.length > 0) && (
           <div className="mx-4 p-3 rounded-xl bg-muted/50 border border-border text-xs text-muted-foreground space-y-1">

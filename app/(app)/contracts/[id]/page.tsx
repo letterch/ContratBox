@@ -8,13 +8,18 @@ import { auth } from "@/lib/auth"
 import { CONTRACT_CATEGORIES } from "@/lib/constants"
 import { calculateCancellationDeadline } from "@/lib/services/contract-deadline"
 import { getMortgagePlan } from "@/lib/services/mortgage"
+import { analyzeMortgageContractDecision } from "@/lib/services/mortgage-recommendation"
+import {
+  buildContractCancellationNextLetterUrl,
+  buildMortgageBankLetterNextLetterUrl,
+} from "@/lib/services/nextletter"
+import { getMortgageMarketBenchmarkRatePct } from "@/lib/services/mortgage-benchmark"
 import { getAppFeatures } from "@/lib/services/feature-flags"
 import { canUseMortgageSimulatorForUser } from "@/lib/services/subscription"
 import { MortgageSimulator } from "@/components/contracts/mortgage-simulator"
 import { getKeyDateFromContractLike, parseUnknownDate } from "@/lib/services/contract-key-date"
 import { DeleteContractButton } from "@/components/contracts/delete-contract-button"
-
-const NEXTLETTER_BASE = process.env.NEXTLETTER_BASE_URL ?? "https://nextletter.ch"
+import { ContractRemindersList } from "@/components/contracts/contract-reminders-list"
 
 export default async function ContractDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await auth()
@@ -89,13 +94,52 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
   const canUseSimulator =
     appFeatures.mortgageSimulatorEnabled &&
     (!appFeatures.mortgageSimulatorProOnly || isProUser || session.user.role === "admin")
-  const nextLetterUrl = new URL(NEXTLETTER_BASE)
-  nextLetterUrl.searchParams.set("provider", contract.provider ?? "")
-  nextLetterUrl.searchParams.set("category", contract.category ?? "")
-  if (contract.policyNumber) nextLetterUrl.searchParams.set("policy", contract.policyNumber)
-  if (renewalDate) nextLetterUrl.searchParams.set("renewal", renewalDate.toISOString().slice(0, 10))
-  if (contract.cancellationNoticeDays) nextLetterUrl.searchParams.set("notice", String(contract.cancellationNoticeDays))
-  if (memberLabel && memberLabel !== "Ménage") nextLetterUrl.searchParams.set("member", memberLabel)
+  const nextLetterUrl = buildContractCancellationNextLetterUrl({
+    provider: contract.provider,
+    policyNumber: contract.policyNumber,
+    contractTitle: contract.title ?? contract.provider,
+    category: contract.category,
+    noticeDays: contract.cancellationNoticeDays,
+    renewalDateIso: renewalDate ? renewalDate.toISOString().slice(0, 10) : null,
+    memberName: memberLabel && memberLabel !== "Ménage" ? memberLabel : null,
+    extraContext: contract.coverageSummary?.slice(0, 400) ?? null,
+  })
+
+  const mortgageDecision =
+    contract.category === "mortgage"
+      ? analyzeMortgageContractDecision({
+          id: contract.id,
+          provider: contract.provider,
+          startDate: contract.startDate,
+          maturityDate: contract.maturityDate,
+          mortgageRate: contract.mortgageRate ? Number(contract.mortgageRate) : null,
+          rawExtraction: contract.rawExtraction,
+          category: contract.category,
+        })
+      : null
+
+  const benchmarkRate = getMortgageMarketBenchmarkRatePct()
+  const expiringSoonTranches = mortgagePlan.isMortgage
+    ? [...mortgagePlan.tranches]
+        .filter((t) => t.daysToMaturity != null && t.daysToMaturity >= 0 && t.daysToMaturity <= 540)
+        .sort((a, b) => (a.daysToMaturity ?? 1e9) - (b.daysToMaturity ?? 1e9))
+    : []
+  const primaryTranche = expiringSoonTranches[0] ?? mortgagePlan.tranches[0]
+  const bankLetterUrl =
+    contract.category === "mortgage"
+      ? buildMortgageBankLetterNextLetterUrl({
+          bankName: contract.provider,
+          contractTitle: contract.title ?? contract.provider,
+          principalChf: mortgagePlan.principalTotal > 0 ? mortgagePlan.principalTotal : null,
+          currentRatePct: primaryTranche?.annualRate ?? null,
+          benchmarkRatePct: benchmarkRate,
+          maturityIso: primaryTranche?.endDate ? primaryTranche.endDate.toISOString().slice(0, 10) : null,
+          context:
+            mortgageDecision && mortgageDecision.savingsPotential > 0
+              ? `Potentiel intérêts ~CHF ${mortgageDecision.savingsPotential}/an (indicatif, non garanti).`
+              : undefined,
+        })
+      : ""
 
   const firstDoc = contract.documents[0]
 
@@ -184,10 +228,48 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
               La fenêtre de résiliation se ferme dans <strong>{daysToCancel} jours</strong>. Si vous ne résiliez pas, le contrat sera automatiquement renouvelé.
             </p>
             <Button size="sm" className="rounded-xl bg-[oklch(0.57_0.20_25)] hover:bg-[oklch(0.52_0.20_25)] text-white text-xs flex-shrink-0 gap-1.5" asChild>
-              <a href={nextLetterUrl.toString()} target="_blank" rel="noopener noreferrer">
+              <a href={nextLetterUrl} target="_blank" rel="noopener noreferrer">
                 <Send className="w-3.5 h-3.5" />
-                Résilier via NextLetter
+                Générer la lettre avec NextLetter
               </a>
+            </Button>
+          </div>
+        )}
+
+        {contract.reminders.length > 0 && (
+          <div className="bg-card rounded-2xl border border-border shadow-card p-5">
+            <h3 className="font-semibold text-foreground text-sm mb-3">Rappels liés à ce contrat</h3>
+            <ContractRemindersList
+              items={contract.reminders.map((r) => ({
+                id: r.id,
+                title: r.title,
+                description: r.description,
+                dueDate: r.dueDate.toISOString(),
+                urgencyLevel: r.urgencyLevel,
+                estimatedImpactChfYear: r.estimatedImpactChfYear != null ? Number(r.estimatedImpactChfYear) : null,
+              }))}
+            />
+          </div>
+        )}
+
+        {contract.decisionInsight && (
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 space-y-2">
+            <h3 className="font-semibold text-foreground text-sm">Analyse IA structurée</h3>
+            <p className="text-xs text-muted-foreground">
+              Indicatif uniquement — à croiser avec vos documents et votre interlocuteur. Priorité{" "}
+              {contract.decisionInsight.priorityScore}/100.
+            </p>
+            <p className="text-sm text-foreground whitespace-pre-wrap">{contract.decisionInsight.nextAction}</p>
+            <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+              <span>Risque : {contract.decisionInsight.riskLevel}</span>
+              <span>Urgence : {contract.decisionInsight.urgencyLevel}</span>
+              <span>
+                Impact estimé : CHF {Number(contract.decisionInsight.estimatedImpactChfYear).toLocaleString("fr-CH")} / an
+              </span>
+              {contract.decisionInsight.canCancelNow ? <span className="text-[oklch(0.57_0.20_25)]">Résiliation possible (selon analyse)</span> : null}
+            </div>
+            <Button size="sm" variant="outline" className="rounded-xl text-xs mt-2" asChild>
+              <Link href="/ai">Relancer une analyse depuis l’assistant</Link>
             </Button>
           </div>
         )}
@@ -279,6 +361,70 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
             {mortgagePlan.isMortgage && (
               <div className="bg-card rounded-2xl border border-border shadow-card p-5">
                 <h3 className="font-semibold text-foreground text-sm mb-4">Vision hypothécaire</h3>
+                {mortgageDecision && (
+                  <div className="rounded-xl border border-border bg-muted/30 p-4 mb-5 text-sm">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Décision · économies</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Échéance la plus proche</p>
+                        <p className="font-semibold text-foreground">
+                          {mortgageDecision.expiresInDays >= 9990 ? "—" : `${mortgageDecision.expiresInDays} j.`}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Potentiel intérêts / an</p>
+                        <p className="font-semibold text-[oklch(0.56_0.15_162)]">
+                          CHF {mortgageDecision.savingsPotential.toLocaleString("fr-CH")}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Recommandation</p>
+                        <p className="font-semibold text-foreground">
+                          {mortgageDecision.recommendation === "renegotiate" ? "Renégocier" : "Conserver / surveiller"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="rounded-xl border border-border bg-muted/20 p-4 mb-5 space-y-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">P0 — taux & échéances</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Taux de référence (benchmark)</p>
+                      <p className="font-semibold text-foreground">{benchmarkRate.toFixed(2)} % fixe indicatif</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Spread vs tranche principale</p>
+                      <p className="font-semibold text-foreground">
+                        {primaryTranche
+                          ? `${(primaryTranche.annualRate - benchmarkRate).toFixed(2)} pts (taux tranche ${primaryTranche.annualRate.toFixed(2)} %)`
+                          : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  {expiringSoonTranches.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-foreground mb-2">Tranches qui expirent dans les 18 mois</p>
+                      <ul className="text-xs text-muted-foreground space-y-1">
+                        {expiringSoonTranches.map((t) => (
+                          <li key={t.name + (t.endDate?.toISOString() ?? "")}>
+                            <span className="text-foreground font-medium">{t.name}</span> — fin{" "}
+                            {t.endDate ? t.endDate.toLocaleDateString("fr-CH") : "?"}
+                            {t.daysToMaturity != null ? ` · ${t.daysToMaturity} j.` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {bankLetterUrl ? (
+                    <Button size="sm" className="rounded-xl text-xs gap-2 w-full sm:w-auto" asChild>
+                      <a href={bankLetterUrl} target="_blank" rel="noopener noreferrer">
+                        <Send className="w-3.5 h-3.5" />
+                        Préparer une lettre à la banque avec NextLetter
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
                   <div className="rounded-xl bg-muted/40 p-3">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Capital total</p>
@@ -449,9 +595,9 @@ export default async function ContractDetailPage({ params }: { params: Promise<{
                 </Link>
               </Button>
               <Button variant="outline" className="w-full rounded-xl gap-2 justify-start text-[oklch(0.57_0.20_25)] border-[oklch(0.57_0.20_25)]/30 hover:bg-[oklch(0.57_0.20_25)]/5" asChild>
-                <a href={nextLetterUrl.toString()} target="_blank" rel="noopener noreferrer">
+                <a href={nextLetterUrl} target="_blank" rel="noopener noreferrer">
                   <Send className="w-4 h-4" />
-                  Résilier via NextLetter
+                  Générer la lettre avec NextLetter
                 </a>
               </Button>
             </div>

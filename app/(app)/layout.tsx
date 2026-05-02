@@ -7,6 +7,7 @@ import { MobileNav } from "@/components/mobile-nav"
 import { Toaster } from "@/components/ui/sonner"
 import { getAccessContextForUser } from "@/lib/services/access-context"
 import { toDesktopNavDtos, toMobileNavDtos } from "@/lib/services/navigation"
+import { NextStepBanner } from "@/components/decision/next-step-banner"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth()
@@ -34,10 +35,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         householdName={dashboard?.household?.name}
         contractCount={dashboard?.household?.contractCount}
         memberCount={dashboard?.household?.memberCount}
+        pendingReminderCount={dashboard?.pendingReminderCount ?? 0}
         navItems={desktopNav}
         planLabel={planLabel}
       />
       <main className="flex-1 min-w-0 pb-20 lg:pb-0">
+        <NextStepBanner payload={dashboard?.nextStepBanner ?? null} />
         {children}
       </main>
       <MobileNav navItems={mobileNav} />

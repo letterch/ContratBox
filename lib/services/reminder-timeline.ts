@@ -26,13 +26,14 @@ export async function buildHouseholdTimeline(input: BuildInput): Promise<Timelin
   const [reminders, tasks, inboxItems, realEstateContracts] = await Promise.all([
     prisma.reminder.findMany({
       where: {
-        contract: { householdId: input.householdId },
-        triggerAt: { gte: now, lte: until },
+        householdId: input.householdId,
+        status: { in: ["pending", "sent"] },
+        dueDate: { gte: now, lte: until },
       },
       include: {
         contract: { select: { id: true, provider: true, title: true, category: true } },
       },
-      orderBy: { triggerAt: "asc" },
+      orderBy: { dueDate: "asc" },
       take: 120,
     }),
     prisma.householdTask.findMany({
@@ -78,13 +79,18 @@ export async function buildHouseholdTimeline(input: BuildInput): Promise<Timelin
   const events: TimelineEvent[] = []
 
   for (const r of reminders) {
+    const href = r.contractId ? `/contracts/${r.contractId}` : "/dashboard"
+    const sev =
+      r.urgencyLevel === "high" || r.type === "mortgage_expiry" || r.type === "cancellation_deadline"
+        ? "high"
+        : "normal"
     events.push({
       id: `reminder:${r.id}`,
       source: "reminder",
-      title: `${r.contract.provider ?? r.contract.title ?? "Contrat"} · ${r.type}`,
-      date: r.triggerAt,
-      severity: r.type.includes("mortgage") ? "high" : "normal",
-      href: `/contracts/${r.contract.id}`,
+      title: r.title || `${r.contract?.provider ?? r.contract?.title ?? "Contrat"} · ${r.type}`,
+      date: r.dueDate,
+      severity: sev,
+      href,
     })
   }
 

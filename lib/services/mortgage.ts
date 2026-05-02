@@ -1,6 +1,6 @@
 export type MortgageAmortizationType = "direct" | "indirect" | "none"
 
-type ContractLike = {
+export type ContractLike = {
   id: string
   provider?: string | null
   startDate?: Date | string | null

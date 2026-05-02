@@ -155,7 +155,7 @@ Règles d'interprétation:
 Réponds uniquement avec le JSON, rien d'autre.`
 }
 
-function parseModelJson(content: string): Record<string, unknown> {
+export function parseModelJson(content: string): Record<string, unknown> {
   const trimmed = content.trim().replace(/^\uFEFF/, "")
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = fenced ? fenced[1].trim() : trimmed

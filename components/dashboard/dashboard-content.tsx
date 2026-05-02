@@ -9,7 +9,11 @@ import { RecentContracts } from "@/components/dashboard/recent-contracts"
 import { CostInsightsPanel } from "@/components/dashboard/cost-insights"
 import { TasksPreview } from "@/components/dashboard/tasks-preview"
 import { TimelinePreview } from "@/components/dashboard/timeline-preview"
+import { TopActionsBlock } from "@/components/decision/top-actions-block"
+import { RemindersPanel } from "@/components/dashboard/reminders-panel"
 import type { TimelineEvent } from "@/lib/services/reminder-timeline"
+import type { ActionableRecommendation, NextStepBannerPayload } from "@/lib/services/recommendation-engine"
+import type { PendingReminderLite } from "@/lib/services/reminder-sync"
 
 type DashboardPayload = {
   totals?: { monthly?: number; annual?: number }
@@ -39,6 +43,9 @@ type DashboardPayload = {
     dueDate: Date | null
   }>
   timelinePreview?: TimelineEvent[]
+  topActions?: ActionableRecommendation[]
+  nextStepBanner?: NextStepBannerPayload
+  pendingReminders?: (PendingReminderLite & { dueDate: Date | string })[]
 }
 
 export function DashboardContent({ data }: { data: DashboardPayload | null }) {
@@ -88,6 +95,16 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
     return { monthly, annual }
   }, [filteredContracts])
 
+  const filteredTopActions = useMemo(() => {
+    const all = data?.topActions ?? []
+    if (activeMemberId === "all") return all
+    return all.filter((a) => {
+      const m = a.ctaHref.match(/\/contracts\/([^/?]+)/)
+      if (!m) return true
+      return filteredContractIds.has(m[1])
+    })
+  }, [data?.topActions, activeMemberId, filteredContractIds])
+
   return (
     <>
       <SummaryCards
@@ -96,6 +113,8 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
         contractCount={filteredContracts.length}
         alertCount={cancellationContracts.length}
       />
+      <TopActionsBlock actions={filteredTopActions} />
+      <RemindersPanel reminders={(data?.pendingReminders ?? []) as Parameters<typeof RemindersPanel>[0]["reminders"]} />
       <CostInsightsPanel insights={data?.costInsights as Parameters<typeof CostInsightsPanel>[0]["insights"]} />
       {!!data?.taskPreview?.length && <TasksPreview tasks={data.taskPreview} />}
       {!!data?.timelinePreview?.length && <TimelinePreview events={data.timelinePreview} />}
