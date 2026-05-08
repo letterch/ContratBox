@@ -17,6 +17,13 @@ import {
   buildOpenRouterChatCompletionBody,
   OPENROUTER_CHAT_COMPLETIONS_URL,
 } from "@/lib/services/openrouter-models"
+import {
+  getAccessContextForUser,
+  accessCanUseModule,
+  accessCanAskAi,
+  accessAiQuotaRemaining,
+} from "@/lib/services/access-context"
+import { incrementAiUsage } from "@/lib/services/ai-usage"
 
 const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 
@@ -135,6 +142,31 @@ export async function POST(request: Request) {
   const detectedLanguage = detectAssistantReplyLanguage(message ?? "")
   if (!message) {
     return NextResponse.json({ error: "Message vide" }, { status: 400 })
+  }
+
+  // Gating module + quota mensuel (5 questions / mois en plan free).
+  const access = await getAccessContextForUser(session.user.id, session)
+  if (!access) {
+    return NextResponse.json({ error: "Contexte d'accès indisponible" }, { status: 403 })
+  }
+  if (!accessCanUseModule(access, "module_ai_chat")) {
+    return NextResponse.json(
+      { error: "Module assistant non disponible pour votre plan." },
+      { status: 403 }
+    )
+  }
+  if (!accessCanAskAi(access)) {
+    const remaining = accessAiQuotaRemaining(access) ?? 0
+    return NextResponse.json(
+      {
+        error: "Quota mensuel de questions atteint.",
+        code: "ai_quota_exceeded",
+        remaining,
+        limit: access.entitlements.quotas.maxAiQuestionsPerMonth,
+        used: access.aiUsage.questionsUsed,
+      },
+      { status: 402 }
+    )
   }
 
   const household = await prisma.household.findFirst({
@@ -296,7 +328,26 @@ export async function POST(request: Request) {
           ).map((a) => `Import : ${a.label}`)
         : []
 
-    return NextResponse.json({ answer, sources: [...attachmentSources, ...sources].slice(0, 8) })
+    // Décompte une question réussie (réponse IA non vide) — pas en cas d'erreur.
+    let aiUsageAfter: number | null = null
+    try {
+      aiUsageAfter = await incrementAiUsage(session.user.id, 1)
+    } catch (err) {
+      console.error("[ai-chat] incrementAiUsage failed", err)
+    }
+    const limit = access.entitlements.quotas.maxAiQuestionsPerMonth
+    return NextResponse.json({
+      answer,
+      sources: [...attachmentSources, ...sources].slice(0, 8),
+      quota:
+        limit == null
+          ? { limit: null, used: aiUsageAfter ?? access.aiUsage.questionsUsed + 1, remaining: null }
+          : {
+              limit,
+              used: aiUsageAfter ?? access.aiUsage.questionsUsed + 1,
+              remaining: Math.max(0, limit - (aiUsageAfter ?? access.aiUsage.questionsUsed + 1)),
+            },
+    })
   } catch (error) {
     console.error("[ai-chat] error", error)
     return NextResponse.json({ error: "Échec de génération IA" }, { status: 500 })

@@ -7,6 +7,7 @@ export type ReminderType =
   | "cancellation_deadline"
   | "mortgage_expiry"
   | "savings_opportunity"
+  | "bill_due"
 
 export function mapTriggerKindToReminderType(kind: ContractTriggerEvent["kind"]): ReminderType {
   if (kind === "renewal_soon") return "contract_renewal"
@@ -143,4 +144,84 @@ export async function countPendingReminders(householdId: string): Promise<number
       status: "pending",
     },
   })
+}
+
+/**
+ * Synchronise les rappels d'échéances pour les factures non payées du foyer.
+ * Création idempotente via dedupeKey `bill_due:<billId>:<dueDate>`.
+ * Doit être appelé après création / mise à jour d'une facture.
+ */
+export async function syncBillRemindersForHousehold(
+  householdId: string,
+  now: Date = new Date()
+): Promise<{ created: number; skipped: number }> {
+  const horizon = addDays(startOfDay(now), 90)
+  const bills = await prisma.bill.findMany({
+    where: {
+      householdId,
+      status: { in: ["pending", "overdue"] },
+      dueDate: { not: null, lte: horizon },
+    },
+    select: {
+      id: true,
+      title: true,
+      provider: true,
+      dueDate: true,
+      amount: true,
+      currency: true,
+    },
+  })
+  if (bills.length === 0) return { created: 0, skipped: 0 }
+
+  const dedupeKeys = bills
+    .map((b) => (b.dueDate ? `bill_due:${b.id}:${b.dueDate.toISOString().slice(0, 10)}` : null))
+    .filter(Boolean) as string[]
+  const existing = await prisma.reminder.findMany({
+    where: {
+      householdId,
+      dedupeKey: { in: dedupeKeys },
+      status: { in: ["pending", "sent"] },
+    },
+    select: { dedupeKey: true },
+  })
+  const blocked = new Set(existing.map((e) => e.dedupeKey).filter(Boolean) as string[])
+
+  let created = 0
+  let skipped = 0
+  for (const bill of bills) {
+    if (!bill.dueDate) continue
+    const dk = `bill_due:${bill.id}:${bill.dueDate.toISOString().slice(0, 10)}`
+    if (blocked.has(dk)) {
+      skipped++
+      continue
+    }
+    const days = Math.ceil((bill.dueDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000))
+    const urgency = days < 0 ? "high" : days <= 3 ? "high" : days <= 14 ? "medium" : "low"
+    const amountStr = `${Number(bill.amount).toFixed(2)} ${bill.currency}`
+    await prisma.reminder.create({
+      data: {
+        householdId,
+        billId: bill.id,
+        type: "bill_due",
+        title: bill.title.slice(0, 200),
+        description: [
+          bill.provider ? `Fournisseur : ${bill.provider}.` : null,
+          `Montant à régler : ${amountStr}.`,
+          days < 0
+            ? `Échéance dépassée de ${Math.abs(days)} j.`
+            : `Échéance dans ${days} j.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+        dueDate: startOfDay(bill.dueDate),
+        urgencyLevel: urgency,
+        status: "pending",
+        source: "bill_engine",
+        dedupeKey: dk,
+      },
+    })
+    blocked.add(dk)
+    created++
+  }
+  return { created, skipped }
 }

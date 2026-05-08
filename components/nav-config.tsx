@@ -12,6 +12,7 @@ import {
   Inbox,
   CreditCard,
   ShieldCheck,
+  Receipt,
 } from "lucide-react"
 import type { NavIconId } from "@/lib/services/navigation"
 
@@ -26,4 +27,5 @@ export const NAV_ICON_COMPONENTS: Record<NavIconId, LucideIcon> = {
   inbox: Inbox,
   billing: CreditCard,
   admin: ShieldCheck,
+  bills: Receipt,
 }

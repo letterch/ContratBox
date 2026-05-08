@@ -14,6 +14,7 @@ import { uploadAndExtractContract, saveContractFromUpload, getUploadPageData, ge
 import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
 import { CONTRACT_CATEGORIES, CONTRACT_CATEGORY_SLUGS } from "@/lib/constants"
 import type { SaveContractInput } from "@/app/actions/contracts"
+import { ManualContractForm } from "@/components/contracts/manual-contract-form"
 
 type Step = "upload" | "extracting" | "review" | "done"
 
@@ -328,14 +329,6 @@ export default function UploadPage() {
   }, [searchParams, extractedState])
   const members = pageData?.members ?? []
   const canAdd = pageData?.canAdd ?? true
-  const categoryOptions = CONTRACT_CATEGORY_SLUGS.map((slug) => ({
-    value: slug,
-    label: CONTRACT_CATEGORIES[slug],
-  }))
-  const memberOptions = members.map((m) => ({
-    value: m.id,
-    label: `${m.firstName}${m.lastName ? ` ${m.lastName}` : ""}`,
-  }))
 
   const handleFile = async (file: File) => {
     setSourceAdministrativeItemId(null)
@@ -467,49 +460,7 @@ export default function UploadPage() {
               <div className="flex-1 h-px bg-border" />
             </div>
 
-            {/* Manual form preview */}
-            <div className="bg-card rounded-2xl border border-border shadow-card p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
-                <Label className="text-sm mb-1.5 block">Prestataire</Label>
-                <Input placeholder="Ex: Swisscom, AXA, Migros..." className="rounded-xl h-10" />
-              </div>
-              <div>
-                <Label className="text-sm mb-1.5 block">Catégorie</Label>
-                <Select>
-                  <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
-                  <SelectContent>
-                    {categoryOptions.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm mb-1.5 block">Membre</Label>
-                <Select>
-                  <SelectTrigger className="rounded-xl h-10"><SelectValue placeholder="Assigner à..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="household">Ménage entier</SelectItem>
-                    {memberOptions.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="text-sm mb-1.5 block">Montant mensuel (CHF)</Label>
-                <Input placeholder="89.00" className="rounded-xl h-10" />
-              </div>
-              <div>
-                <Label className="text-sm mb-1.5 block">Date de renouvellement</Label>
-                <Input type="date" className="rounded-xl h-10" />
-              </div>
-              <Button className="sm:col-span-2 h-11 rounded-xl bg-primary text-primary-foreground shadow-brand">Enregistrer le contrat</Button>
-            </div>
+            <ManualContractForm members={members} />
           </div>
         )}
 

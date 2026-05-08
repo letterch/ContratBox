@@ -13,6 +13,7 @@ export type NavIconId =
   | "inbox"
   | "billing"
   | "admin"
+  | "bills"
 
 export type NavPlacement = "both" | "desktop" | "mobile"
 
@@ -31,7 +32,8 @@ type NavTemplate = Omit<MainNavItem, "visible">
 const NAV_TEMPLATES: NavTemplate[] = [
   { href: "/dashboard", label: "Tableau de bord", shortLabel: "Accueil", icon: "dashboard", placement: "both" },
   { href: "/contracts", label: "Contrats", shortLabel: "Contrats", icon: "contracts", placement: "both" },
-  { href: "/upload", label: "Ajouter un contrat", shortLabel: "Ajouter", icon: "upload", placement: "both" },
+  { href: "/bills", label: "Factures", shortLabel: "Factures", icon: "bills", placement: "both" },
+  { href: "/upload", label: "Ajouter un contrat", shortLabel: "Ajouter", icon: "upload", placement: "desktop" },
   { href: "/inbox", label: "Inbox admin", shortLabel: "Inbox", icon: "inbox", placement: "desktop" },
   { href: "/tasks", label: "Tâches", shortLabel: "Tâches", icon: "tasks", placement: "desktop" },
   { href: "/ai", label: "Assistant IA", shortLabel: "IA", icon: "ai", placement: "both" },
@@ -48,6 +50,8 @@ function itemVisible(ctx: AccessContext, href: string): boolean {
     case "/upload":
     case "/settings":
       return true
+    case "/bills":
+      return accessCanUseModule(ctx, "module_bills")
     case "/ai":
       return accessCanUseModule(ctx, "module_ai_chat")
     case "/real-estate":

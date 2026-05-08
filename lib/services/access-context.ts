@@ -13,9 +13,12 @@ import {
   mortgageSimulatorEffectiveAllowed,
   taskQuotaAllowsAdd,
   inboxQuotaAllowsAdd,
+  billQuotaAllowsAdd,
+  aiQuotaAllowsQuestion,
   type EffectiveEntitlements,
 } from "@/lib/services/entitlements"
 import { isPaidStripeSubscriptionRow } from "@/lib/services/subscription"
+import { getCurrentMonthAiUsage } from "@/lib/services/ai-usage"
 
 export type SubscriptionSnapshot = {
   status: string
@@ -30,6 +33,7 @@ export type AccessHouseholdSummary = {
   id: string
   name: string
   contractCount: number
+  billCount: number
   memberCount: number
 }
 
@@ -52,6 +56,11 @@ export type AccessContext = {
   planLabel: string
   /** Abonnement Stripe persisté (webhook / admin) — peut être null */
   subscription: SubscriptionSnapshot | null
+  /** Usage IA du mois en cours (pour calcul restant côté UI). */
+  aiUsage: {
+    monthStart: Date
+    questionsUsed: number
+  }
 }
 
 function sessionRole(session: Session | null): string | undefined {
@@ -68,11 +77,13 @@ export async function getAccessContextForUser(
       id: true,
       email: true,
       role: true,
+      extraModules: true,
+      aiQuotaOverride: true,
     },
   })
   if (!user) return null
 
-  const [subscription, household, appFeatures] = await Promise.all([
+  const [subscription, household, appFeatures, aiUsage] = await Promise.all([
     prisma.subscription.findUnique({
       where: { userId },
       select: {
@@ -88,10 +99,11 @@ export async function getAccessContextForUser(
       where: { ownerId: userId },
       orderBy: { createdAt: "asc" },
       include: {
-        _count: { select: { contracts: true, members: true } },
+        _count: { select: { contracts: true, members: true, bills: true } },
       },
     }),
     getAppFeatures(),
+    getCurrentMonthAiUsage(userId),
   ])
 
   const planSlug = resolvePlanSlugFromStripePriceId(subscription?.stripePriceId)
@@ -100,6 +112,8 @@ export async function getAccessContextForUser(
   const entitlements = buildEffectiveEntitlements({
     planSlug,
     appFeatures,
+    extraModules: user.extraModules,
+    aiQuotaOverride: user.aiQuotaOverride,
   })
 
   const isPlatformAdmin =
@@ -131,9 +145,14 @@ export async function getAccessContextForUser(
           id: household.id,
           name: household.name,
           contractCount: household._count.contracts,
+          billCount: household._count.bills,
           memberCount: household._count.members,
         }
       : null,
+    aiUsage: {
+      monthStart: aiUsage.monthStart,
+      questionsUsed: aiUsage.questionsCount,
+    },
   }
 }
 
@@ -156,4 +175,19 @@ export function accessTaskQuotaAllows(ctx: AccessContext, activeTaskCount: numbe
 
 export function accessInboxQuotaAllows(ctx: AccessContext, activeInboxCount: number): boolean {
   return inboxQuotaAllowsAdd(ctx.entitlements, activeInboxCount)
+}
+
+export function accessCanAddBill(ctx: AccessContext): boolean {
+  if (!ctx.household) return false
+  return billQuotaAllowsAdd(ctx.entitlements, ctx.household.billCount)
+}
+
+export function accessCanAskAi(ctx: AccessContext): boolean {
+  return aiQuotaAllowsQuestion(ctx.entitlements, ctx.aiUsage.questionsUsed)
+}
+
+export function accessAiQuotaRemaining(ctx: AccessContext): number | null {
+  const max = ctx.entitlements.quotas.maxAiQuestionsPerMonth
+  if (max == null) return null
+  return Math.max(0, max - ctx.aiUsage.questionsUsed)
 }

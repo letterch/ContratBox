@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { ensureInboundEmailToken } from "@/lib/services/inbound-email"
 
 export async function updateOnboardingAction(householdName: string) {
   const session = await auth()
@@ -47,6 +48,11 @@ export async function updateOnboardingAction(householdName: string) {
   await prisma.user.update({
     where: { id: session.user.id },
     data: { onboardingCompletedAt: new Date() },
+  })
+
+  // Génère le token d'email entrant pour activer l'adresse `factures+<token>@…` du user.
+  await ensureInboundEmailToken(session.user.id).catch((err) => {
+    console.error("[onboarding] ensureInboundEmailToken failed", err)
   })
 
   return { ok: true }

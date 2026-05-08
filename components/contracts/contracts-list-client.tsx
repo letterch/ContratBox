@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Search, LayoutGrid, List, Filter, FileText, Clock } from "lucide-react"
+import { Search, LayoutGrid, List, Filter, FileText, Clock, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CONTRACT_CATEGORIES } from "@/lib/constants"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
@@ -90,7 +90,7 @@ export function ContractsListClient({
   categories: string[]
   members: { id: string; firstName: string; lastName?: string | null }[]
 }) {
-  const [view, setView] = useState<"grid" | "list">("grid")
+  const [view, setView] = useState<"grid" | "list" | "byMember">("grid")
   const [search, setSearch] = useState("")
   const [activeCategory, setActiveCategory] = useState("Toutes")
   const [activeMember, setActiveMember] = useState("Tous")
@@ -123,15 +123,24 @@ export function ContractsListClient({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setView("grid")}
+              title="Grille"
               className={cn("p-2 rounded-xl transition-colors", view === "grid" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent")}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
             <button
               onClick={() => setView("list")}
+              title="Liste"
               className={cn("p-2 rounded-xl transition-colors", view === "list" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent")}
             >
               <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setView("byMember")}
+              title="Par membre"
+              className={cn("p-2 rounded-xl transition-colors", view === "byMember" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent")}
+            >
+              <Users className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -199,6 +208,16 @@ export function ContractsListClient({
               <Link href="/upload">Ajouter un contrat</Link>
             </Button>
           </div>
+        ) : view === "byMember" ? (
+          <ContractsByMember
+            contracts={filtered}
+            members={members}
+            statusConfig={statusConfig}
+            getKeyDate={getKeyDate}
+            getStatus={getStatus}
+            getDateLabel={getDateLabel}
+            formatDate={formatDate}
+          />
         ) : view === "grid" ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((c) => {
@@ -294,6 +313,120 @@ export function ContractsListClient({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+type StatusConfig = typeof statusConfig
+
+function ContractsByMember({
+  contracts,
+  members,
+  statusConfig: cfg,
+  getKeyDate,
+  getStatus,
+  getDateLabel,
+  formatDate,
+}: {
+  contracts: ContractItem[]
+  members: { id: string; firstName: string; lastName?: string | null }[]
+  statusConfig: StatusConfig
+  getKeyDate: (c: ContractItem) => Date | null
+  getStatus: (c: ContractItem) => keyof StatusConfig
+  getDateLabel: (c: ContractItem) => string
+  formatDate: (d: Date) => string
+}) {
+  const householdContracts = contracts.filter((c) => c.isHouseholdWide)
+  const groups: { key: string; label: string; rows: ContractItem[] }[] = []
+  if (householdContracts.length > 0) {
+    groups.push({ key: "household", label: "Ménage entier", rows: householdContracts })
+  }
+  for (const m of members) {
+    const rows = contracts.filter(
+      (c) => !c.isHouseholdWide && c.member && `${c.member.firstName}${c.member.lastName ? ` ${c.member.lastName}` : ""}`.trim() === `${m.firstName}${m.lastName ? ` ${m.lastName}` : ""}`.trim()
+    )
+    if (rows.length === 0) continue
+    groups.push({
+      key: m.id,
+      label: `${m.firstName}${m.lastName ? ` ${m.lastName}` : ""}`,
+      rows,
+    })
+  }
+  const unassigned = contracts.filter((c) => !c.isHouseholdWide && !c.member)
+  if (unassigned.length > 0) {
+    groups.push({ key: "unassigned", label: "Non assignés", rows: unassigned })
+  }
+
+  if (groups.length === 0) {
+    return <div className="text-sm text-muted-foreground">Aucun contrat à afficher.</div>
+  }
+
+  return (
+    <div className="space-y-5">
+      {groups.map((g) => {
+        const total = g.rows.reduce((acc, c) => {
+          const amt = c.premiumAmount != null ? Number(c.premiumAmount) : 0
+          if (!Number.isFinite(amt)) return acc
+          if (c.premiumFrequency === "annual") return acc + amt / 12
+          if (c.premiumFrequency === "quarterly") return acc + amt / 3
+          return acc + amt
+        }, 0)
+        return (
+          <div key={g.key} className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
+            <div className="flex items-center justify-between bg-muted/40 px-4 py-2.5">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <Users className="w-4 h-4 text-primary" />
+                {g.label}
+                <span className="text-xs font-normal text-muted-foreground">({g.rows.length})</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                ≈ <strong className="text-foreground">CHF {total.toLocaleString("fr-CH", { maximumFractionDigits: 0 })}</strong> / mois
+              </div>
+            </div>
+            <div className="divide-y divide-border">
+              {g.rows.map((c) => {
+                const status = cfg[getStatus(c)]
+                const amount = c.premiumAmount != null ? Number(c.premiumAmount) : null
+                const keyDate = getKeyDate(c)
+                return (
+                  <Link
+                    key={c.id}
+                    href={`/contracts/${c.id}`}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
+                  >
+                    <FileText className="w-4 h-4 text-muted-foreground" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{c.provider ?? "Sans nom"}</p>
+                      <p className="text-xs text-muted-foreground">{c.contractType ?? c.category ?? "—"}</p>
+                    </div>
+                    <Badge variant="outline" className={cn("hidden sm:inline-flex text-[10px] border", status.class)}>
+                      {status.label}
+                    </Badge>
+                    <div className="hidden md:block text-right text-xs text-muted-foreground min-w-32">
+                      {keyDate ? (
+                        <>
+                          <div>{getDateLabel(c)}</div>
+                          <div className="text-foreground/80">{formatDate(keyDate)}</div>
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">
+                        {amount != null ? `CHF ${amount.toLocaleString("fr-CH")}` : "—"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        /{c.premiumFrequency === "annual" ? "an" : c.premiumFrequency === "quarterly" ? "trim." : "mois"}
+                      </p>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

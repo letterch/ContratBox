@@ -21,6 +21,12 @@ model User {
   isOwner       Boolean   @default(false)
   isTenant      Boolean   @default(true)
   onboardingCompletedAt DateTime?
+  /** Token unique pour la réception de factures par email (factures+<token>@…). */
+  inboundEmailToken String?  @unique
+  /** Surcharge admin du quota IA mensuel (null = utiliser le plan). */
+  aiQuotaOverride   Int?
+  /** Modules supplémentaires accordés manuellement par un admin. */
+  extraModules      String[] @default([])
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -29,8 +35,10 @@ model User {
   households       Household[]       @relation("HouseholdOwner")
   householdMembers HouseholdMember[]
   contracts        Contract[]
+  bills            Bill[]
   aiChatThreads    AIChatThread[]
   aiAssistantAttachments AiAssistantAttachment[]
+  aiUsageMonths    AiUsageMonth[]
   subscription     Subscription?
   auditLogs        AuditLog[]
   householdTasksCreated HouseholdTask[] @relation("HouseholdTaskCreator")
@@ -82,6 +90,7 @@ model Household {
   owner   User              @relation("HouseholdOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members HouseholdMember[]
   contracts Contract[]
+  bills    Bill[]
   realEstateProperties RealEstateProperty[]
   tasks HouseholdTask[]
   administrativeItems AdministrativeItem[]
@@ -104,6 +113,7 @@ model HouseholdMember {
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   contracts  Contract[]
+  bills      Bill[]
   assignedTasks HouseholdTask[] @relation("HouseholdTaskAssignee")
 }
 
@@ -159,6 +169,7 @@ model Contract {
   documents  Document[]
   reminders  Reminder[]
   tasks      HouseholdTask[]
+  bills      Bill[]
   convertedFromInboxItems AdministrativeItem[] @relation("AdministrativeItemConvertedContract")
   decisionInsight ContractDecisionInsight?
 }
@@ -222,6 +233,7 @@ model AdministrativeItem {
   rawExtraction Json?
   textExtractionMeta Json?
   convertedToContractId String?
+  convertedToBillId    String?
   convertedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -230,11 +242,113 @@ model AdministrativeItem {
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
   convertedToContract Contract? @relation("AdministrativeItemConvertedContract", fields: [convertedToContractId], references: [id], onDelete: SetNull)
+  convertedToBill     Bill?     @relation("AdministrativeItemConvertedBill", fields: [convertedToBillId], references: [id], onDelete: SetNull)
   /** Tâches dérivées (la logique métier limite à 1 via service). */
   derivedTasks HouseholdTask[]
 
   @@index([householdId, status])
   @@index([convertedToContractId])
+  @@index([convertedToBillId])
+}
+
+// ——— Factures mensuelles ———
+model Bill {
+  id              String   @id @default(cuid())
+  householdId     String
+  createdById     String
+
+  /** Lien optionnel vers le contrat parent (ex : facture mensuelle Swisscom liée au contrat Swisscom). */
+  contractId      String?
+  /** Lien optionnel vers un membre du ménage. */
+  memberId        String?
+  isHouseholdWide Boolean  @default(false)
+
+  /** Titre court (ex: « Facture Swisscom mars 2026 »). */
+  title           String
+  /** Émetteur (Swisscom, Romande Énergie, CSS…). */
+  provider        String?
+  /** Slug de catégorie (electricity, telecom, insurance_premium, rent, taxes, healthcare, other). */
+  category        String?
+
+  invoiceNumber   String?
+  /** Référence (BVR / QR-bill / IBAN). */
+  reference       String?
+
+  amount          Decimal  @db.Decimal(12, 2)
+  currency        String   @default("CHF")
+
+  /** Date d'émission de la facture. */
+  issueDate       DateTime? @db.Date
+  /** Date d'échéance. */
+  dueDate         DateTime? @db.Date
+  /** Date de paiement effective. */
+  paidAt          DateTime?
+  status          String   @default("pending") // pending | paid | overdue | disputed | cancelled
+
+  /** Facture récurrente : monthly | quarterly | annual | one_off. */
+  recurrence      String   @default("one_off")
+
+  /** Origine de la saisie. */
+  source          String   @default("manual") // manual | ocr | email | inbox_conversion
+
+  notes           String?  @db.Text
+
+  // Extraction IA / OCR
+  extractedText        String? @db.Text
+  extractionConfidence Decimal? @db.Decimal(5, 2)
+  rawExtraction        Json?
+  textExtractionMeta   Json?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  createdBy User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  contract  Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  member    HouseholdMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  documents BillDocument[]
+  reminders Reminder[]
+  /** Items inbox convertis en cette facture (traçabilité). */
+  convertedFromInboxItems AdministrativeItem[] @relation("AdministrativeItemConvertedBill")
+
+  @@index([householdId, status])
+  @@index([householdId, dueDate])
+  @@index([contractId])
+  @@index([memberId])
+}
+
+model BillDocument {
+  id            String   @id @default(cuid())
+  billId        String
+  name          String
+  mimeType      String
+  sizeBytes     Int
+  r2Key         String
+  r2Bucket      String?
+  extractedText String?  @db.Text
+  textExtractionMeta Json?
+  createdAt     DateTime @default(now())
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+}
+
+// ——— Suivi usage assistant IA (quota mensuel) ———
+model AiUsageMonth {
+  id        String   @id @default(cuid())
+  userId    String
+  /** Premier jour du mois UTC (clé d'agrégation). */
+  monthStart DateTime @db.Date
+  /** Nombre de questions consommées sur le mois. */
+  questionsCount Int    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, monthStart])
+  @@index([userId])
 }
 
 // ——— Tâches foyer (workflow admin) ———
@@ -495,8 +609,9 @@ model Reminder {
   householdId            String
   contractId             String?
   propertyId             String?
+  billId                 String?
 
-  type                   String // contract_renewal | cancellation_deadline | mortgage_expiry | savings_opportunity
+  type                   String // contract_renewal | cancellation_deadline | mortgage_expiry | savings_opportunity | bill_due
   title                  String
   description            String    @db.Text
   dueDate                DateTime  @db.Date
@@ -514,9 +629,11 @@ model Reminder {
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   contract  Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
   property  RealEstateProperty? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  bill      Bill? @relation(fields: [billId], references: [id], onDelete: SetNull)
 
   @@index([householdId, status, dueDate])
   @@index([contractId, status])
+  @@index([billId, status])
   @@index([dedupeKey])
 }
 

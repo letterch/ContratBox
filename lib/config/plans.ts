@@ -13,6 +13,7 @@ export const PLAN_FEATURE_KEYS = [
   "module_inbox",
   "module_tasks",
   "module_real_estate",
+  "module_bills",
   "module_multi_household",
   "module_advanced_care",
 ] as const
@@ -21,8 +22,12 @@ export type PlanFeatureKey = (typeof PLAN_FEATURE_KEYS)[number]
 export type PlanQuotas = {
   /** null = illimité */
   maxContracts: number | null
+  /** Factures mensuelles : null = illimité */
+  maxBills: number | null
   maxInboxItems: number | null
   maxTasks: number | null
+  /** Questions assistant IA / mois calendaire : null = illimité */
+  maxAiQuestionsPerMonth: number | null
   /** Foyers dont l’utilisateur est owner (accès futur multi-foyer) */
   maxOwnedHouseholds: number
 }
@@ -41,6 +46,7 @@ const soloFeatures: Record<PlanFeatureKey, boolean> = {
   module_inbox: true,
   module_tasks: true,
   module_real_estate: true,
+  module_bills: true,
   module_multi_household: false,
   module_advanced_care: false,
 }
@@ -49,11 +55,13 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
   free: {
     slug: "free",
     label: "Gratuit",
-    description: "Découverte — contrats et assistant limités.",
+    description: "Découverte — 2 contrats, 2 factures, 5 questions IA / mois.",
     quotas: {
-      maxContracts: 3,
+      maxContracts: 2,
+      maxBills: 2,
       maxInboxItems: 3,
       maxTasks: 10,
+      maxAiQuestionsPerMonth: 5,
       maxOwnedHouseholds: 1,
     },
     features: {
@@ -62,6 +70,8 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
       module_tasks: false,
       /** Vue immo simple déjà en prod — conservée sur free ; affinages “bail pro” viendront plus tard. */
       module_real_estate: true,
+      /** Module factures accessible en free (jusqu'à maxBills). */
+      module_bills: true,
       module_multi_household: false,
       module_advanced_care: false,
     },
@@ -69,11 +79,13 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
   solo: {
     slug: "solo",
     label: "Solo",
-    description: "Inbox, tâches et contrats sans limite artificielle côté produit.",
+    description: "Tout illimité : contrats, factures, questions IA.",
     quotas: {
       maxContracts: null,
+      maxBills: null,
       maxInboxItems: null,
       maxTasks: null,
+      maxAiQuestionsPerMonth: null,
       maxOwnedHouseholds: 1,
     },
     features: { ...soloFeatures },
@@ -84,8 +96,10 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
     description: "Plusieurs foyers et fonctions famille (évolution).",
     quotas: {
       maxContracts: null,
+      maxBills: null,
       maxInboxItems: null,
       maxTasks: null,
+      maxAiQuestionsPerMonth: null,
       maxOwnedHouseholds: 3,
     },
     features: {
@@ -99,8 +113,10 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
     description: "Niveau avancé et automatisations (évolution).",
     quotas: {
       maxContracts: null,
+      maxBills: null,
       maxInboxItems: null,
       maxTasks: null,
+      maxAiQuestionsPerMonth: null,
       maxOwnedHouseholds: 5,
     },
     features: {
@@ -123,7 +139,13 @@ export function planMeetsMinimum(userPlan: PlanSlug, minimum: PlanSlug): boolean
 }
 
 /** Limite contrats du plan gratuit — réexportée pour compat avec l’existant. */
-export const FREE_PLAN_CONTRACT_LIMIT = PLANS.free.quotas.maxContracts ?? 3
+export const FREE_PLAN_CONTRACT_LIMIT = PLANS.free.quotas.maxContracts ?? 2
+
+/** Limite factures du plan gratuit. */
+export const FREE_PLAN_BILL_LIMIT = PLANS.free.quotas.maxBills ?? 2
+
+/** Limite questions IA mensuelles plan gratuit. */
+export const FREE_PLAN_AI_QUESTIONS_LIMIT = PLANS.free.quotas.maxAiQuestionsPerMonth ?? 5
 
 function normalizePriceId(id: string | null | undefined): string | null {
   if (!id || !id.trim()) return null

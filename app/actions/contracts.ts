@@ -345,6 +345,88 @@ export async function saveContractFromUpload(data: SaveContractInput) {
   return { ok: true, contractId: contract.id }
 }
 
+export type ManualContractInput = {
+  title: string
+  provider?: string | null
+  category?: ContractCategorySlug | null
+  policyNumber?: string | null
+  memberId?: string | null
+  isHouseholdWide?: boolean
+  premiumAmount?: number | null
+  premiumFrequency?: string | null
+  startDate?: string | null
+  renewalDate?: string | null
+  endDate?: string | null
+  cancellationNoticeDays?: number | null
+  cancellationDeadline?: string | null
+  autoRenewal?: boolean | null
+  notes?: string | null
+}
+
+export type ManualContractResult =
+  | { ok: true; contractId: string }
+  | { ok: false; error: string }
+
+/**
+ * Création manuelle d'un contrat (sans fichier scanné). Calcule la deadline de résiliation
+ * automatiquement à partir du préavis si fournie, et crée éventuellement un reminder lease.
+ */
+export async function createContractManualAction(
+  input: ManualContractInput
+): Promise<ManualContractResult> {
+  const session = await auth()
+  if (!session?.user?.id) return { ok: false, error: "Non authentifié" }
+  const { allowed } = await canAddContract(session.user.id)
+  if (!allowed) {
+    return {
+      ok: false,
+      error: `Limite de ${FREE_CONTRACT_LIMIT} contrats gratuits atteinte. Passez à un abonnement pour en ajouter.`,
+    }
+  }
+  const household = await prisma.household.findFirst({
+    where: { ownerId: session.user.id },
+    select: { id: true },
+  })
+  if (!household) return { ok: false, error: "Foyer introuvable" }
+  if (!input.title?.trim()) return { ok: false, error: "Titre requis" }
+
+  const startDate = input.startDate ? new Date(input.startDate) : null
+  const renewalDate = input.renewalDate ? new Date(input.renewalDate) : null
+  const endDate = input.endDate ? new Date(input.endDate) : null
+  const keyDate = getKeyDateFromContractLike({
+    renewalDate,
+    endDate,
+    startDate,
+    rawExtraction: null,
+  })
+  const cancellationDeadline = input.cancellationDeadline
+    ? new Date(input.cancellationDeadline)
+    : calculateCancellationDeadline(keyDate, input.cancellationNoticeDays ?? null, null, null)
+
+  const contract = await prisma.contract.create({
+    data: {
+      householdId: household.id,
+      createdById: session.user.id,
+      title: input.title.trim(),
+      provider: input.provider?.trim() || null,
+      category: input.category ?? null,
+      policyNumber: input.policyNumber?.trim() || null,
+      memberId: input.isHouseholdWide ? null : input.memberId ?? null,
+      isHouseholdWide: input.isHouseholdWide ?? false,
+      premiumAmount: input.premiumAmount ?? null,
+      premiumFrequency: input.premiumFrequency ?? null,
+      startDate,
+      renewalDate,
+      endDate,
+      cancellationNoticeDays: input.cancellationNoticeDays ?? null,
+      cancellationDeadline,
+      autoRenewal: input.autoRenewal ?? null,
+      importantClauses: input.notes ?? null,
+    },
+  })
+  return { ok: true, contractId: contract.id }
+}
+
 export async function getUploadSeedFromInbox(itemId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Non authentifié")

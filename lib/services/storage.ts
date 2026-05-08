@@ -107,6 +107,12 @@ export function inboxObjectKey(userId: string, filename: string): string {
   return `${userId}/inbox/${Date.now()}-${safe}`
 }
 
+/** Fichiers factures (justificatifs liés au modèle Bill). */
+export function billObjectKey(userId: string, filename: string): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_")
+  return `${userId}/bills/${Date.now()}-${safe}`
+}
+
 export function getStorageDebugConfig() {
   return {
     endpoint: candidateEndpoints[0] ?? "undefined",

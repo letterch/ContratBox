@@ -10,6 +10,8 @@ import {
 import { cn } from "@/lib/utils"
 import { FeatureFlagsCard } from "@/components/admin/feature-flags-card"
 import { ProUsersManager } from "@/components/admin/pro-users-manager"
+import Link from "next/link"
+import { Settings as SettingsIcon } from "lucide-react"
 
 const kpis = [
   { label: "Utilisateurs", value: "Pilotage live", delta: "", icon: Users, color: "text-primary", bg: "bg-primary/8" },
@@ -49,6 +51,12 @@ export default function AdminPage() {
             <p className="text-xs text-muted-foreground">Supervision de la plateforme ContratBox</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="rounded-xl text-xs gap-1.5">
+              <Link href="/admin/modules">
+                <SettingsIcon className="w-3.5 h-3.5" />
+                Modules / quotas
+              </Link>
+            </Button>
             <Button variant="outline" size="sm" className="rounded-xl text-xs gap-1.5 hidden sm:flex">
               <Download className="w-3.5 h-3.5" />
               Exporter
