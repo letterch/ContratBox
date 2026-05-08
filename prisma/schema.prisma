@@ -21,8 +21,10 @@ model User {
   isOwner       Boolean   @default(false)
   isTenant      Boolean   @default(true)
   onboardingCompletedAt DateTime?
-  /** Token unique pour la réception de factures par email (factures+<token>@…). */
-  inboundEmailToken String?  @unique
+  /** Token unique pour la réception de factures par email (factures+<token>@…).
+   *  Unicité gérée côté application (retry sur collision) pour éviter un index
+   *  unique qui ferait échouer `prisma db push` sur les bases existantes. */
+  inboundEmailToken String?
   /** Surcharge admin du quota IA mensuel (null = utiliser le plan). */
   aiQuotaOverride   Int?
   /** Modules supplémentaires accordés manuellement par un admin. */
@@ -43,6 +45,8 @@ model User {
   auditLogs        AuditLog[]
   householdTasksCreated HouseholdTask[] @relation("HouseholdTaskCreator")
   administrativeItemsCreated AdministrativeItem[]
+
+  @@index([inboundEmailToken])
 }
 
 model Account {

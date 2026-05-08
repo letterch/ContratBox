@@ -6,8 +6,8 @@ ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "inboundEmailToken" TEXT;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "aiQuotaOverride" INTEGER;
 ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "extraModules" TEXT[] NOT NULL DEFAULT '{}';
 
--- Unique sur token email entrant (NULL autorisé)
-CREATE UNIQUE INDEX IF NOT EXISTS "User_inboundEmailToken_key" ON "User"("inboundEmailToken");
+-- Index simple (l'unicité est garantie côté application via retry sur collision)
+CREATE INDEX IF NOT EXISTS "User_inboundEmailToken_idx" ON "User"("inboundEmailToken");
 
 -- 2) AdministrativeItem : lien vers une facture créée
 ALTER TABLE "AdministrativeItem" ADD COLUMN IF NOT EXISTS "convertedToBillId" TEXT;

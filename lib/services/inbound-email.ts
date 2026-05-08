@@ -4,6 +4,10 @@ import { prisma } from "@/lib/db"
 /**
  * Génère et persiste un token d'email entrant pour un utilisateur s'il n'en possède pas.
  * Le token est utilisé pour reconnaître l'utilisateur dans une adresse `factures+<token>@…`.
+ *
+ * L'unicité est garantie côté application : avant de poser un nouveau token, on vérifie
+ * qu'il n'existe pas déjà via findFirst. Cela évite d'imposer un index unique en DB
+ * (qui rendrait impossible un déploiement progressif sur les bases existantes).
  */
 export async function ensureInboundEmailToken(userId: string): Promise<string> {
   const user = await prisma.user.findUnique({
@@ -12,19 +16,19 @@ export async function ensureInboundEmailToken(userId: string): Promise<string> {
   })
   if (user?.inboundEmailToken) return user.inboundEmailToken
 
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     const token = randomBytes(8).toString("base64url").toLowerCase().replace(/[^a-z0-9]/g, "")
     if (token.length < 6) continue
-    try {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { inboundEmailToken: token },
-      })
-      return token
-    } catch (err) {
-      // Collision unique : retente.
-      if (attempt === 4) throw err
-    }
+    const existing = await prisma.user.findFirst({
+      where: { inboundEmailToken: token },
+      select: { id: true },
+    })
+    if (existing) continue
+    await prisma.user.update({
+      where: { id: userId },
+      data: { inboundEmailToken: token },
+    })
+    return token
   }
   throw new Error("Impossible de générer un token email entrant")
 }
@@ -39,7 +43,7 @@ export async function findUserByInboundEmail(toAddress: string) {
   const m = toAddress.toLowerCase().match(/factures\+([a-z0-9]+)@/)
   if (!m) return null
   const token = m[1]
-  return prisma.user.findUnique({
+  return prisma.user.findFirst({
     where: { inboundEmailToken: token },
     select: { id: true },
   })
