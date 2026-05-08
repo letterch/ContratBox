@@ -292,21 +292,39 @@ function computePropertyFinance(p: PrismaPropertyLike): {
   const annualInterest = (totalDebt * weightedRatePct) / 100
   const monthlyInterest = annualInterest / 12
 
-  // Amortissement : niveau bien par défaut. Si « legacy » loan d’amortissement existe, on l’ajoute.
+  // Amortissement : si une ou plusieurs lignes « legacy » existent, on les utilise
+  // exclusivement (ancien modèle = un prêt par taux d'amortissement). Sinon, on
+  // applique le taux d'amortissement du bien à la dette hypothécaire totale
+  // (modèle simplifié : dette × taux % / 100 = amortissement annuel).
   const propertyAmortRate = decimalToNumber(p.amortizationRatePct)
   const propertyAmortMode = amortizationMode(p.amortizationMode)
 
-  let annualAmortization = (totalDebt * propertyAmortRate) / 100
+  let annualAmortization: number
+  let effectiveAmortRate = propertyAmortRate
+  let effectiveAmortMode = propertyAmortMode
 
-  for (const lg of legacyAmortizationLoans) {
-    const lgPrincipal = lg.tranches.length > 0
-      ? lg.tranches.reduce((s, t) => s + decimalToNumber(t.principal), 0)
-      : decimalToNumber(lg.principalTotal)
-    const lgRate = lg.tranches.length > 0
-      ? lg.tranches.reduce((s, t) => s + decimalToNumber(t.principal) * decimalToNumber(t.ratePct), 0) /
-        Math.max(1, lg.tranches.reduce((s, t) => s + decimalToNumber(t.principal), 0))
-      : decimalToNumber(lg.amortizationRatePct)
-    annualAmortization += (lgPrincipal * lgRate) / 100
+  if (legacyAmortizationLoans.length > 0) {
+    // Modèle legacy : sommer chaque ligne d'amortissement.
+    annualAmortization = 0
+    let legacyPrincipal = 0
+    let legacyWeighted = 0
+    for (const lg of legacyAmortizationLoans) {
+      const lgPrincipal = lg.tranches.length > 0
+        ? lg.tranches.reduce((s, t) => s + decimalToNumber(t.principal), 0)
+        : decimalToNumber(lg.principalTotal)
+      const lgRate = lg.tranches.length > 0
+        ? lg.tranches.reduce((s, t) => s + decimalToNumber(t.principal) * decimalToNumber(t.ratePct), 0) /
+          Math.max(1, lg.tranches.reduce((s, t) => s + decimalToNumber(t.principal), 0))
+        : decimalToNumber(lg.amortizationRatePct)
+      annualAmortization += (lgPrincipal * lgRate) / 100
+      legacyPrincipal += lgPrincipal
+      legacyWeighted += lgPrincipal * lgRate
+    }
+    // Taux affiché = moyenne pondérée des lignes legacy.
+    effectiveAmortRate = legacyPrincipal > 0 ? legacyWeighted / legacyPrincipal : propertyAmortRate
+    effectiveAmortMode = amortizationMode(legacyAmortizationLoans[0]?.amortizationMode ?? "direct")
+  } else {
+    annualAmortization = (totalDebt * propertyAmortRate) / 100
   }
 
   const monthlyAmortization = annualAmortization / 12
@@ -325,8 +343,8 @@ function computePropertyFinance(p: PrismaPropertyLike): {
       weightedRatePct,
       annualInterest,
       monthlyInterest,
-      amortizationRatePct: propertyAmortRate,
-      amortizationMode: propertyAmortMode,
+      amortizationRatePct: effectiveAmortRate,
+      amortizationMode: effectiveAmortMode,
       annualAmortization,
       monthlyAmortization,
       monthlyExtraCharges,

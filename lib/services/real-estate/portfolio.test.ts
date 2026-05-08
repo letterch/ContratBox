@@ -115,6 +115,85 @@ export function runPortfolioUnitTests() {
   assert.ok(Math.abs(summary.monthlyTotalCost - (view.finance.monthlyTotalCost + home.finance.monthlyTotalCost)) < 0.01)
   // Plus-value globale = null (home n'a pas valeurs)
   assert.equal(summary.totalCapitalGain, null)
+
+  // Cas 3 : exemple utilisateur — dette 570000 @ 0.94 % (1 tranche).
+  //   Intérêts = 570000 × 0.94 / 100 / 12 = 446.50 ✓
+  //   Amortissement = 570000 × 1.25 / 100 / 12 = 593.75 ✓
+  const userExample = buildPropertyView({
+    id: "p3",
+    name: "Mon bien",
+    address: null,
+    propertyType: "apartment",
+    investmentKind: "rental",
+    purchaseValueChf: null,
+    purchaseDate: null,
+    valuationChf: null,
+    amortizationRatePct: 1.25,
+    amortizationMode: "direct",
+    mortgageLoans: [
+      {
+        id: "lA",
+        label: "Dette",
+        loanKind: "mortgage",
+        amortizationMode: "direct",
+        principalTotal: 0,
+        amortizationRatePct: 0,
+        tranches: [
+          { id: "tA", name: "T1", principal: 570_000, ratePct: 0.94, rateType: "fixed", startDate: null, endDate: null },
+        ],
+      },
+    ],
+    charges: [],
+    leases: [],
+  })
+  assert.ok(Math.abs(userExample.finance.monthlyInterest - 446.5) < 0.02, `interest=${userExample.finance.monthlyInterest}`)
+  assert.ok(Math.abs(userExample.finance.monthlyAmortization - 593.75) < 0.02, `amort=${userExample.finance.monthlyAmortization}`)
+
+  // Cas 4 : ancien modèle — 1 prêt mortgage + 1 prêt amortization legacy.
+  //   On vérifie qu'il n'y a PAS de double comptage avec le taux du bien.
+  const legacy = buildPropertyView({
+    id: "p4",
+    name: "Bien legacy",
+    address: null,
+    propertyType: "apartment",
+    investmentKind: "rental",
+    purchaseValueChf: null,
+    purchaseDate: null,
+    valuationChf: null,
+    amortizationRatePct: 1.25, // Doit être ignoré au profit du legacy
+    amortizationMode: "direct",
+    mortgageLoans: [
+      {
+        id: "mA",
+        label: "Hypothèque",
+        loanKind: "mortgage",
+        amortizationMode: "direct",
+        principalTotal: 520_000,
+        amortizationRatePct: 0.69,
+        tranches: [],
+      },
+      {
+        id: "amA",
+        label: "Amortissement",
+        loanKind: "amortization",
+        amortizationMode: "direct",
+        principalTotal: 570_000,
+        amortizationRatePct: 1.25,
+        tranches: [
+          { id: "tA1", name: "T1", principal: 570_000, ratePct: 1.25, rateType: "fixed", startDate: null, endDate: null },
+        ],
+      },
+    ],
+    charges: [],
+    leases: [],
+  })
+  // Intérêts = 520000 × 0.69 / 100 / 12 = 299
+  assert.ok(Math.abs(legacy.finance.monthlyInterest - 299) < 0.02, `legacy interest=${legacy.finance.monthlyInterest}`)
+  // Amortissement = 570000 × 1.25 / 100 / 12 = 593.75 (PAS de double avec 520000 × 1.25)
+  assert.ok(
+    Math.abs(legacy.finance.monthlyAmortization - 593.75) < 0.02,
+    `legacy amort=${legacy.finance.monthlyAmortization}`
+  )
 }
 
 runPortfolioUnitTests()
