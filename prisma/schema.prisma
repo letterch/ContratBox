@@ -285,8 +285,16 @@ model RealEstateProperty {
   propertyType String  @default("apartment") // apartment | house | mixed | commercial | other
   /** rental = locatif / rendement ; primary_residence = habitation propre (pas de rendement locatif par défaut) */
   investmentKind String @default("rental") // rental | primary_residence
-  /** Prix d’achat ou valeur estimée (CHF), base pour le rendement brut / net — pas la dette hypothécaire */
+  /** Prix d’achat (CHF) — input formulaire « valeur d’achat ». */
+  purchaseValueChf Decimal? @db.Decimal(14, 2)
+  /** Date d’achat (optionnelle). */
+  purchaseDate     DateTime? @db.Date
+  /** Valeur actuelle / estimée (CHF) — base pour le rendement brut / net. */
   valuationChf Decimal? @db.Decimal(14, 2)
+  /** Taux d’amortissement annuel par défaut du bien (%). 1.25 % = standard suisse 2e rang. */
+  amortizationRatePct Decimal @default(1.25) @db.Decimal(6, 4)
+  /** Mode d’amortissement par défaut : direct (rembourse la dette) ou indirect (3e pilier). */
+  amortizationMode String @default("direct") // direct | indirect
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -357,6 +365,10 @@ model LeaseUnit {
   realEstatePropertyId String
   label               String   @default("Lot principal")
   tenantName          String?
+  /** Date d’entrée du locataire (début du bail). */
+  startDate           DateTime? @db.Date
+  /** Date de fin du bail (optionnelle). */
+  endDate             DateTime? @db.Date
   isRented            Boolean  @default(false)
   rentMonthly         Decimal  @default(0) @db.Decimal(12, 2)
   chargesMonthly      Decimal  @default(0) @db.Decimal(12, 2)

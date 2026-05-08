@@ -9,6 +9,12 @@ import { buildChargeStatementPayload } from "@/lib/services/real-estate/statemen
 import { computeMortgageCharges, computeMortgageMaturityAlerts } from "@/lib/services/real-estate/finance"
 import { computeYieldSummary, primaryResidenceYieldSummary } from "@/lib/services/real-estate/yield"
 import { isPrimaryResidence, parseInvestmentKind } from "@/lib/services/real-estate/investment-kind"
+import {
+  buildPortfolioSummary,
+  buildPropertyView,
+  type PortfolioSummary,
+  type PropertyView,
+} from "@/lib/services/real-estate/portfolio"
 
 function toRateType(value: unknown): "fixed" | "saron" {
   return String(value ?? "").toLowerCase() === "saron" ? "saron" : "fixed"
@@ -170,18 +176,47 @@ async function requireOwnerHousehold() {
   return { userId: session.user.id, householdId: household.id }
 }
 
+function parseDecimalNullable(raw: unknown): number | null {
+  const s = String(raw ?? "").trim().replace(",", ".")
+  if (!s) return null
+  const n = Number(s)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function parseDateNullable(raw: unknown): Date | null {
+  const s = String(raw ?? "").trim()
+  if (!s) return null
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 export async function createRealEstatePropertyAction(formData: FormData) {
   const { householdId } = await requireOwnerHousehold()
   const name = String(formData.get("name") ?? "").trim()
   if (!name) throw new Error("Nom du bien requis")
   const address = String(formData.get("address") ?? "").trim() || null
   const propertyType = String(formData.get("propertyType") ?? "apartment").trim() || "apartment"
-  const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
-  const valuationNum = valuationRaw ? Number(valuationRaw) : NaN
-  const valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
+  const valuationChf = parseDecimalNullable(formData.get("valuationChf"))
+  const purchaseValueChf = parseDecimalNullable(formData.get("purchaseValueChf"))
+  const purchaseDate = parseDateNullable(formData.get("purchaseDate"))
   const investmentKind = parseInvestmentKind(formData.get("investmentKind"))
+  const amortizationRateRaw = String(formData.get("amortizationRatePct") ?? "").trim().replace(",", ".")
+  const amortizationRatePct = amortizationRateRaw ? Number(amortizationRateRaw) : 1.25
+  const amortizationMode = toAmortizationMode(formData.get("amortizationMode"))
   await prisma.realEstateProperty.create({
-    data: { householdId, name, address, propertyType, investmentKind, isActive: true, valuationChf },
+    data: {
+      householdId,
+      name,
+      address,
+      propertyType,
+      investmentKind,
+      isActive: true,
+      valuationChf,
+      purchaseValueChf,
+      purchaseDate,
+      amortizationRatePct: Number.isFinite(amortizationRatePct) && amortizationRatePct >= 0 ? amortizationRatePct : 1.25,
+      amortizationMode,
+    },
   })
   revalidatePath("/real-estate")
 }
@@ -198,18 +233,30 @@ export async function updateRealEstatePropertyAction(formData: FormData) {
     propertyType: string
     investmentKind?: string
     valuationChf?: number | null
+    purchaseValueChf?: number | null
+    purchaseDate?: Date | null
+    amortizationRatePct?: number
+    amortizationMode?: string
   } = { name, address, propertyType }
   if (formData.has("investmentKind")) {
     data.investmentKind = parseInvestmentKind(formData.get("investmentKind"))
   }
   if (formData.has("valuationChf")) {
-    const valuationRaw = String(formData.get("valuationChf") ?? "").trim().replace(",", ".")
-    if (valuationRaw === "") {
-      data.valuationChf = null
-    } else {
-      const valuationNum = Number(valuationRaw)
-      data.valuationChf = Number.isFinite(valuationNum) && valuationNum > 0 ? valuationNum : null
-    }
+    data.valuationChf = parseDecimalNullable(formData.get("valuationChf"))
+  }
+  if (formData.has("purchaseValueChf")) {
+    data.purchaseValueChf = parseDecimalNullable(formData.get("purchaseValueChf"))
+  }
+  if (formData.has("purchaseDate")) {
+    data.purchaseDate = parseDateNullable(formData.get("purchaseDate"))
+  }
+  if (formData.has("amortizationRatePct")) {
+    const raw = String(formData.get("amortizationRatePct") ?? "").trim().replace(",", ".")
+    const n = Number(raw)
+    if (raw !== "" && Number.isFinite(n) && n >= 0) data.amortizationRatePct = n
+  }
+  if (formData.has("amortizationMode")) {
+    data.amortizationMode = toAmortizationMode(formData.get("amortizationMode"))
   }
   await prisma.realEstateProperty.updateMany({
     where: { id: propertyId, householdId },
@@ -406,13 +453,17 @@ export async function addPropertyChargeAction(formData: FormData) {
 export async function createLeaseUnitAction(formData: FormData) {
   const { householdId } = await requireOwnerHousehold()
   const propertyId = String(formData.get("propertyId") ?? "")
+  if (!propertyId) throw new Error("Bien manquant")
   const property = await prisma.realEstateProperty.findFirst({ where: { id: propertyId, householdId } })
   if (!property) throw new Error("Bien introuvable")
   const label = String(formData.get("label") ?? "").trim() || "Lot principal"
   const tenantName = String(formData.get("tenantName") ?? "").trim() || null
   const rentMonthly = Number(formData.get("rentMonthly") ?? 0)
   const chargesMonthly = Number(formData.get("chargesMonthly") ?? 0)
-  const isRented = String(formData.get("isRented") ?? "false") === "true"
+  const isRentedRaw = String(formData.get("isRented") ?? "true")
+  const isRented = isRentedRaw === "true" || isRentedRaw === "on" || (!!tenantName && isRentedRaw !== "false")
+  const startDate = parseDateNullable(formData.get("startDate"))
+  const endDate = parseDateNullable(formData.get("endDate"))
   await prisma.leaseUnit.create({
     data: {
       realEstatePropertyId: propertyId,
@@ -421,9 +472,43 @@ export async function createLeaseUnitAction(formData: FormData) {
       rentMonthly: rentMonthly > 0 ? rentMonthly : 0,
       chargesMonthly: chargesMonthly > 0 ? chargesMonthly : 0,
       isRented,
+      startDate,
+      endDate,
     },
   })
   revalidatePath(`/real-estate/${propertyId}/operations`)
+  revalidatePath("/real-estate")
+}
+
+export async function updateLeaseUnitAction(formData: FormData) {
+  const { householdId } = await requireOwnerHousehold()
+  const leaseId = String(formData.get("leaseId") ?? "")
+  const lease = await prisma.leaseUnit.findFirst({
+    where: { id: leaseId },
+    include: { realEstateProperty: true },
+  })
+  if (!lease || lease.realEstateProperty.householdId !== householdId) throw new Error("Lot introuvable")
+  const label = String(formData.get("label") ?? "").trim() || lease.label
+  const tenantName = String(formData.get("tenantName") ?? "").trim() || null
+  const rentMonthly = Number(formData.get("rentMonthly") ?? 0)
+  const chargesMonthly = Number(formData.get("chargesMonthly") ?? 0)
+  const isRentedRaw = String(formData.get("isRented") ?? "true")
+  const isRented = isRentedRaw === "true" || isRentedRaw === "on"
+  const startDate = parseDateNullable(formData.get("startDate"))
+  const endDate = parseDateNullable(formData.get("endDate"))
+  await prisma.leaseUnit.update({
+    where: { id: leaseId },
+    data: {
+      label,
+      tenantName,
+      rentMonthly: rentMonthly > 0 ? rentMonthly : 0,
+      chargesMonthly: chargesMonthly > 0 ? chargesMonthly : 0,
+      isRented,
+      startDate,
+      endDate,
+    },
+  })
+  revalidatePath(`/real-estate/${lease.realEstatePropertyId}/operations`)
   revalidatePath("/real-estate")
 }
 
@@ -722,4 +807,88 @@ export async function syncMortgageMaturityTasksAction(formData: FormData) {
   }
   revalidatePath(`/real-estate/${property.id}/financing`)
   revalidatePath("/tasks")
+}
+
+/**
+ * Vue patrimoine pour le tableau de bord à onglets : tous les biens du ménage
+ * avec finance simplifiée (intérêts, amortissement, charges PPE, loyers).
+ */
+export async function getRealEstatePortfolio(): Promise<{
+  properties: PropertyView[]
+  summary: PortfolioSummary
+} | null> {
+  const session = await auth()
+  if (!session?.user?.id) return null
+  const household = await prisma.household.findFirst({ where: { ownerId: session.user.id } })
+  if (!household) return null
+  const properties = await prisma.realEstateProperty.findMany({
+    where: { householdId: household.id, isActive: true },
+    include: {
+      mortgageLoans: {
+        include: { tranches: { orderBy: { endDate: "asc" } } },
+        orderBy: { createdAt: "asc" },
+      },
+      charges: { orderBy: { createdAt: "asc" } },
+      leases: { orderBy: { createdAt: "asc" } },
+    },
+    orderBy: { updatedAt: "desc" },
+  })
+  const views = properties.map((p) => buildPropertyView(p))
+  const summary = buildPortfolioSummary(views)
+  return { properties: views, summary }
+}
+
+/** Mise à jour rapide du taux d'amortissement / mode au niveau du bien. */
+export async function updatePropertyAmortizationAction(formData: FormData) {
+  const { householdId } = await requireOwnerHousehold()
+  const propertyId = String(formData.get("propertyId") ?? "")
+  const rateRaw = String(formData.get("amortizationRatePct") ?? "1.25").trim().replace(",", ".")
+  const rate = Number(rateRaw)
+  const mode = toAmortizationMode(formData.get("amortizationMode"))
+  const updated = await prisma.realEstateProperty.updateMany({
+    where: { id: propertyId, householdId },
+    data: {
+      amortizationRatePct: Number.isFinite(rate) && rate >= 0 ? rate : 1.25,
+      amortizationMode: mode,
+    },
+  })
+  if (updated.count === 0) throw new Error("Bien introuvable")
+  revalidatePath("/real-estate")
+  revalidatePath(`/real-estate/${propertyId}/financing`)
+}
+
+/**
+ * Création / mise à jour rapide de la dette hypothécaire principale d'un bien.
+ * Si une ligne « mortgage » existe déjà, elle est mise à jour ; sinon une nouvelle
+ * est créée. Permet à l'utilisateur de saisir directement la dette totale et le
+ * taux moyen sans passer par les tranches.
+ */
+export async function setPrimaryMortgageDebtAction(formData: FormData) {
+  const { householdId } = await requireOwnerHousehold()
+  const propertyId = String(formData.get("propertyId") ?? "")
+  const property = await prisma.realEstateProperty.findFirst({
+    where: { id: propertyId, householdId },
+    include: { mortgageLoans: { orderBy: { createdAt: "asc" } } },
+  })
+  if (!property) throw new Error("Bien introuvable")
+  const principalRaw = String(formData.get("principalTotal") ?? "0").trim().replace(",", ".")
+  const principal = Number(principalRaw)
+  const rateRaw = String(formData.get("ratePct") ?? "0").trim().replace(",", ".")
+  const ratePct = Number(rateRaw)
+  const existing = property.mortgageLoans.find((l) => l.loanKind !== "amortization")
+  const data = {
+    principalTotal: Number.isFinite(principal) && principal >= 0 ? principal : 0,
+    amortizationRatePct: Number.isFinite(ratePct) && ratePct >= 0 ? ratePct : 0,
+    label: "Dette hypothécaire",
+    loanKind: "mortgage" as const,
+  }
+  if (existing) {
+    await prisma.mortgageLoan.update({ where: { id: existing.id }, data })
+  } else {
+    await prisma.mortgageLoan.create({
+      data: { realEstatePropertyId: propertyId, ...data },
+    })
+  }
+  revalidatePath("/real-estate")
+  revalidatePath(`/real-estate/${propertyId}/financing`)
 }
