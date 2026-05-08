@@ -45,11 +45,21 @@ export type PropertyLeaseView = {
 export type PropertyMortgageView = {
   loanId: string
   label: string
+  /** mortgage | amortization */
+  loanKind: "mortgage" | "amortization"
+  /** Mode d'amortissement par défaut de la ligne (si loanKind=amortization). */
+  amortizationMode: "direct" | "indirect"
   /** Capital pris en compte pour les intérêts (somme tranches sinon principalTotal). */
   totalDebt: number
   /** Taux moyen pondéré sur les tranches (si aucune tranche : taux de la ligne). */
   weightedRatePct: number
+  /** True si le prêt a été saisi sans tranches détaillées (ancien modèle). */
+  isVirtual: boolean
   tranches: PropertyTrancheView[]
+  /** Capital saisi sur le prêt (si pas de tranches). */
+  principalTotal: number
+  /** Taux par défaut du prêt (si pas de tranches). */
+  ratePct: number
 }
 
 export type PropertyComputedFinance = {
@@ -90,7 +100,10 @@ export type PropertyView = {
   /** Plus-value latente (valeur actuelle - prix d’achat) si les deux sont définis. */
   capitalGainChf: number | null
   capitalGainPct: number | null
+  /** Vue agrégée du financement (premier prêt mortgage). Conservée pour compat. */
   mortgage: PropertyMortgageView | null
+  /** Liste détaillée de tous les prêts du bien (intérêts + amortissement legacy). */
+  mortgageLoans: PropertyMortgageView[]
   charges: PropertyChargeView[]
   leases: PropertyLeaseView[]
   finance: PropertyComputedFinance
@@ -215,6 +228,7 @@ function freq(v: string): Frequency {
 function computePropertyFinance(p: PrismaPropertyLike): {
   finance: PropertyComputedFinance
   mortgage: PropertyMortgageView | null
+  mortgageLoansView: PropertyMortgageView[]
 } {
   const mortgageLoans = p.mortgageLoans.filter((l) => l.loanKind !== "amortization")
   const legacyAmortizationLoans = p.mortgageLoans.filter((l) => l.loanKind === "amortization")
@@ -224,7 +238,7 @@ function computePropertyFinance(p: PrismaPropertyLike): {
   let totalDebt = 0
   let weightedSum = 0
 
-  let primaryMortgageView: PropertyMortgageView | null = null
+  const mortgageLoansView: PropertyMortgageView[] = []
 
   for (const loan of mortgageLoans) {
     const principalLine = decimalToNumber(loan.principalTotal)
@@ -255,37 +269,65 @@ function computePropertyFinance(p: PrismaPropertyLike): {
       trancheRows.push({ principal: principalLine, ratePct: lineRate, rateType: "fixed" })
     }
 
-    if (!primaryMortgageView) {
-      primaryMortgageView = {
-        loanId: loan.id,
-        label: loan.label,
-        totalDebt: loanDebt,
-        weightedRatePct: loanDebt > 0 ? loanWeighted / loanDebt : lineRate,
-        tranches,
-      }
-    }
+    mortgageLoansView.push({
+      loanId: loan.id,
+      label: loan.label,
+      loanKind: "mortgage",
+      amortizationMode: amortizationMode(loan.amortizationMode),
+      totalDebt: loanDebt,
+      weightedRatePct: loanDebt > 0 ? loanWeighted / loanDebt : lineRate,
+      isVirtual: tranches.length === 0,
+      tranches,
+      principalTotal: principalLine,
+      ratePct: lineRate,
+    })
   }
 
-  // Si plusieurs prêts hypothécaires, on agrège leurs tranches dans la « vue mortgage » principale
+  // Vue par défaut : premier prêt hypothécaire (pour compat avec ancien code).
+  // Si plusieurs prêts, on l'enrichit avec la liste consolidée.
+  let primaryMortgageView: PropertyMortgageView | null = mortgageLoansView[0] ?? null
   if (primaryMortgageView && mortgageLoans.length > 1) {
-    const allTranches: PropertyTrancheView[] = mortgageLoans.flatMap((l) =>
-      l.tranches.map((t) => ({
-        id: t.id,
-        name: t.name,
-        principal: decimalToNumber(t.principal),
-        ratePct: decimalToNumber(t.ratePct),
-        rateType: rateType(t.rateType),
-        startDate: t.startDate,
-        endDate: t.endDate,
-      }))
-    )
+    const allTranches: PropertyTrancheView[] = mortgageLoansView.flatMap((l) => l.tranches)
     primaryMortgageView = {
-      loanId: primaryMortgageView.loanId,
+      ...primaryMortgageView,
       label: "Dette hypothécaire (toutes lignes)",
       totalDebt,
       weightedRatePct: totalDebt > 0 ? weightedSum / totalDebt : 0,
       tranches: allTranches,
+      isVirtual: false,
     }
+  }
+
+  // Ajoute aussi les lignes legacy d'amortissement à la vue détaillée
+  // pour qu'elles soient visibles et supprimables depuis la nouvelle UI.
+  for (const loan of legacyAmortizationLoans) {
+    const principalLine = decimalToNumber(loan.principalTotal)
+    const lineRate = decimalToNumber(loan.amortizationRatePct)
+    const tranches = loan.tranches.map<PropertyTrancheView>((t) => ({
+      id: t.id,
+      name: t.name,
+      principal: decimalToNumber(t.principal),
+      ratePct: decimalToNumber(t.ratePct),
+      rateType: rateType(t.rateType),
+      startDate: t.startDate,
+      endDate: t.endDate,
+    }))
+    const loanDebt = tranches.length > 0 ? tranches.reduce((s, t) => s + t.principal, 0) : principalLine
+    const loanWeighted = tranches.length > 0
+      ? tranches.reduce((s, t) => s + t.principal * t.ratePct, 0)
+      : principalLine * lineRate
+    mortgageLoansView.push({
+      loanId: loan.id,
+      label: loan.label,
+      loanKind: "amortization",
+      amortizationMode: amortizationMode(loan.amortizationMode),
+      totalDebt: loanDebt,
+      weightedRatePct: loanDebt > 0 ? loanWeighted / loanDebt : lineRate,
+      isVirtual: tranches.length === 0,
+      tranches,
+      principalTotal: principalLine,
+      ratePct: lineRate,
+    })
   }
 
   const weightedRatePct = totalDebt > 0 ? weightedSum / totalDebt : 0
@@ -352,11 +394,12 @@ function computePropertyFinance(p: PrismaPropertyLike): {
       monthlyTotalCost,
     },
     mortgage: primaryMortgageView,
+    mortgageLoansView,
   }
 }
 
 export function buildPropertyView(p: PrismaPropertyLike): PropertyView {
-  const { finance, mortgage } = computePropertyFinance(p)
+  const { finance, mortgage, mortgageLoansView } = computePropertyFinance(p)
   const purchase = decimalToNullable(p.purchaseValueChf)
   const valuation = decimalToNullable(p.valuationChf)
   const capitalGainChf = purchase != null && valuation != null ? valuation - purchase : null
@@ -407,6 +450,7 @@ export function buildPropertyView(p: PrismaPropertyLike): PropertyView {
     capitalGainChf,
     capitalGainPct,
     mortgage,
+    mortgageLoans: mortgageLoansView,
     charges,
     leases,
     finance,

@@ -1,18 +1,20 @@
 import Link from "next/link"
-import { Plus, Trash2, FileText, ArrowRight } from "lucide-react"
+import { Plus, Trash2, FileText, ArrowRight, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   addMortgageTrancheAction,
   addPropertyChargeAction,
   archiveRealEstatePropertyAction,
+  createMortgageLoanAction,
   deleteMortgageTrancheAction,
   setPrimaryMortgageDebtAction,
   updateMortgageTrancheAction,
   updatePropertyAmortizationAction,
   updateRealEstatePropertyAction,
 } from "@/app/actions/real-estate"
-import type { PropertyView } from "@/lib/services/real-estate/portfolio"
+import type { PropertyMortgageView, PropertyView } from "@/lib/services/real-estate/portfolio"
 import { DeletePropertyChargeButton } from "@/components/real-estate/operations-actions"
+import { DeleteMortgageLoanButton } from "@/components/real-estate/loan-actions"
 import { formatChf, formatPct, isoDate } from "@/components/real-estate/format"
 
 const inputClass =
@@ -35,9 +37,8 @@ const FREQ_LABEL: Record<string, string> = {
 }
 
 export function PropertyCard({ property }: { property: PropertyView }) {
-  const debtFromTranches = (property.mortgage?.tranches.length ?? 0) > 0
-  const debtValue = property.mortgage?.totalDebt ?? 0
-  const rateValue = property.mortgage?.weightedRatePct ?? 0
+  const mortgageLoansList = property.mortgageLoans.filter((l) => l.loanKind === "mortgage")
+  const legacyAmortizationLoans = property.mortgageLoans.filter((l) => l.loanKind === "amortization")
   const usageBadge = property.isPrimaryResidence ? "Domicile principal" : "Bien de rendement"
 
   return (
@@ -196,16 +197,21 @@ export function PropertyCard({ property }: { property: PropertyView }) {
         </div>
       </section>
 
-      {/* Bloc 2 : Dette hypothécaire */}
+      {/* Bloc 2 : Dette hypothécaire — un sous-bloc par prêt */}
       <section className="px-5 py-4 border-t border-border/60">
         <header className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h4 className="text-xs font-semibold text-foreground">Dette hypothécaire</h4>
           <p className="text-[11px] text-muted-foreground">
-            Capital total {debtFromTranches ? "(somme tranches)" : "(estimation)"} : CHF {formatChf(debtValue)} · Taux moyen {formatPct(rateValue)}
+            {mortgageLoansList.length === 0
+              ? "Aucune dette saisie"
+              : `${mortgageLoansList.length} prêt${mortgageLoansList.length > 1 ? "s" : ""} · Capital total CHF ${formatChf(
+                  mortgageLoansList.reduce((s, l) => s + l.totalDebt, 0)
+                )} · Taux moyen ${formatPct(property.finance.weightedRatePct)}`}
           </p>
         </header>
 
-        {!debtFromTranches && (
+        {/* Aucun prêt : formulaire de saisie rapide */}
+        {mortgageLoansList.length === 0 && (
           <form action={setPrimaryMortgageDebtAction} className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
             <input type="hidden" name="propertyId" value={property.id} />
             <label className="flex flex-col gap-1">
@@ -215,7 +221,6 @@ export function PropertyCard({ property }: { property: PropertyView }) {
                 type="number"
                 step="0.01"
                 min="0"
-                defaultValue={property.mortgage?.totalDebt || ""}
                 placeholder="ex: 600000"
                 className={inputClass}
               />
@@ -227,7 +232,6 @@ export function PropertyCard({ property }: { property: PropertyView }) {
                 type="number"
                 step="0.0001"
                 min="0"
-                defaultValue={rateValue || ""}
                 placeholder="ex: 1.85"
                 className={inputClass}
               />
@@ -240,100 +244,79 @@ export function PropertyCard({ property }: { property: PropertyView }) {
           </form>
         )}
 
-        <p className="text-[11px] text-muted-foreground mb-2">
-          Affinez la dette en saisissant les tranches (montant, taux, échéance) — le calcul prend automatiquement la moyenne pondérée par tranche.
-        </p>
+        {/* Avertissement si plusieurs prêts (donnée legacy à fusionner) */}
+        {mortgageLoansList.length > 1 && (
+          <div className="flex gap-2 items-start rounded-xl border border-amber-300/50 bg-amber-50/50 dark:bg-amber-900/20 px-3 py-2 mb-3 text-[11px]">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-amber-900 dark:text-amber-100">
+              <strong>{mortgageLoansList.length} prêts hypothécaires</strong> sont enregistrés pour ce bien. Si vous n&apos;avez qu&apos;une seule dette en réalité, supprimez les lignes en trop ci-dessous pour que le calcul des intérêts (CHF{" "}
+              {formatChf(property.finance.monthlyInterest)}/mois) corresponde à votre attente.
+            </p>
+          </div>
+        )}
 
-        {/* Liste des tranches */}
-        {property.mortgage && property.mortgage.tranches.length > 0 ? (
-          <ul className="flex flex-col gap-1.5 mb-2">
-            {property.mortgage.tranches.map((t) => (
-              <li key={t.id} className="rounded-lg border border-border/60 bg-background px-2 py-1.5">
-                <form action={updateMortgageTrancheAction} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-end">
-                  <input type="hidden" name="trancheId" value={t.id} />
-                  <label className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                    <span className="text-[9px] uppercase text-muted-foreground">Tranche</span>
-                    <input name="name" defaultValue={t.name ?? ""} placeholder="Tranche" className={inputClass} />
-                  </label>
-                  <label className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase text-muted-foreground">Capital CHF</span>
-                    <input name="principal" type="number" step="0.01" defaultValue={t.principal} className={inputClass} />
-                  </label>
-                  <label className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase text-muted-foreground">Taux %</span>
-                    <input name="ratePct" type="number" step="0.0001" defaultValue={t.ratePct} className={inputClass} />
-                  </label>
-                  <label className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase text-muted-foreground">Type</span>
-                    <select name="rateType" defaultValue={t.rateType} className={inputClass}>
-                      <option value="fixed">Fixe</option>
-                      <option value="saron">SARON</option>
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase text-muted-foreground">Échéance</span>
-                    <input name="endDate" type="date" defaultValue={isoDate(t.endDate)} className={inputClass} />
-                  </label>
-                  <div className="flex gap-1 justify-end">
-                    <Button type="submit" size="sm" variant="ghost" className="rounded-lg h-7 text-[11px] px-2">
-                      Mettre à jour
-                    </Button>
-                    <Button
-                      formAction={deleteMortgageTrancheAction}
-                      name="trancheId"
-                      value={t.id}
-                      type="submit"
-                      size="sm"
-                      variant="ghost"
-                      className="rounded-lg h-7 text-[11px] px-2 text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                </form>
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        {/* Sous-bloc par prêt */}
+        <div className="flex flex-col gap-3">
+          {mortgageLoansList.map((loan, idx) => (
+            <MortgageLoanBlock key={loan.loanId} loan={loan} loanIndex={idx} />
+          ))}
+        </div>
 
-        {/* Ajout d'une tranche — création implicite du loan si nécessaire via setPrimaryMortgageDebtAction puis tranche */}
-        {property.mortgage ? (
-          <form action={addMortgageTrancheAction} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-end">
-            <input type="hidden" name="loanId" value={property.mortgage.loanId} />
-            <label className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-              <span className="text-[9px] uppercase text-muted-foreground">Nouvelle tranche</span>
-              <input name="name" placeholder="ex: T1" className={inputClass} />
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[9px] uppercase text-muted-foreground">Capital CHF</span>
-              <input name="principal" type="number" step="0.01" placeholder="200000" className={inputClass} />
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[9px] uppercase text-muted-foreground">Taux %</span>
-              <input name="ratePct" type="number" step="0.0001" placeholder="1.85" className={inputClass} />
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[9px] uppercase text-muted-foreground">Type</span>
-              <select name="rateType" defaultValue="fixed" className={inputClass}>
-                <option value="fixed">Fixe</option>
-                <option value="saron">SARON</option>
-              </select>
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[9px] uppercase text-muted-foreground">Échéance</span>
-              <input name="endDate" type="date" className={inputClass} />
-            </label>
-            <Button type="submit" size="sm" variant="outline" className="rounded-lg h-8 text-xs gap-1">
-              <Plus className="w-3.5 h-3.5" />
-              Ajouter
-            </Button>
-          </form>
-        ) : (
-          <p className="text-[11px] text-muted-foreground italic">
-            Saisissez d&apos;abord la dette totale et le taux ci-dessus pour pouvoir ajouter des tranches détaillées.
-          </p>
+        {/* Ajout d'un nouveau prêt (utile si le user veut ajouter plusieurs vraies lignes) */}
+        {mortgageLoansList.length > 0 && (
+          <details className="mt-3">
+            <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground">
+              + Ajouter un autre prêt hypothécaire
+            </summary>
+            <form action={createMortgageLoanAction} className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-2 items-end">
+              <input type="hidden" name="propertyId" value={property.id} />
+              <input type="hidden" name="loanKind" value="mortgage" />
+              <label className="flex flex-col gap-0.5 col-span-2">
+                <span className="text-[9px] uppercase text-muted-foreground">Libellé</span>
+                <input name="label" placeholder="ex: Prêt 2e rang" className={inputClass} />
+              </label>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[9px] uppercase text-muted-foreground">Capital CHF</span>
+                <input name="principalTotal" type="number" step="0.01" placeholder="100000" className={inputClass} />
+              </label>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[9px] uppercase text-muted-foreground">Taux %</span>
+                <input name="amortizationRatePct" type="number" step="0.0001" placeholder="1.85" className={inputClass} />
+              </label>
+              <Button type="submit" size="sm" variant="outline" className="rounded-lg h-8 text-xs col-span-2 sm:col-span-4">
+                Créer le prêt
+              </Button>
+            </form>
+          </details>
         )}
       </section>
+
+      {/* Avertissement amortissement legacy */}
+      {legacyAmortizationLoans.length > 0 && (
+        <section className="px-5 py-4 border-t border-border/60">
+          <div className="flex gap-2 items-start rounded-xl border border-amber-300/50 bg-amber-50/50 dark:bg-amber-900/20 px-3 py-2 text-[11px]">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-amber-900 dark:text-amber-100 mb-2">
+                <strong>{legacyAmortizationLoans.length} ligne{legacyAmortizationLoans.length > 1 ? "s" : ""} d&apos;amortissement (ancien modèle)</strong> sont encore enregistrées. Le nouveau calcul utilise un taux d&apos;amortissement au niveau du bien (voir bloc « Amortissement » ci-dessous). Vous pouvez supprimer ces anciennes lignes en toute sécurité.
+              </p>
+              <ul className="flex flex-col gap-1.5">
+                {legacyAmortizationLoans.map((l) => (
+                  <li
+                    key={l.loanId}
+                    className="rounded-lg border border-border/60 bg-background px-2 py-1.5 flex items-center justify-between gap-2"
+                  >
+                    <span className="text-foreground">
+                      {l.label} · CHF {formatChf(l.totalDebt)} @ {formatPct(l.weightedRatePct)} ({l.amortizationMode})
+                    </span>
+                    <DeleteMortgageLoanButton loanId={l.loanId} label={l.label} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Bloc 3 : Amortissement */}
       <section className="px-5 py-4 border-t border-border/60">
@@ -443,6 +426,119 @@ export function PropertyCard({ property }: { property: PropertyView }) {
         </form>
       </section>
     </article>
+  )
+}
+
+function MortgageLoanBlock({ loan, loanIndex }: { loan: PropertyMortgageView; loanIndex: number }) {
+  return (
+    <div className="rounded-xl border border-border/70 bg-background p-3">
+      <header className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div>
+          <p className="text-xs font-semibold text-foreground">
+            Prêt #{loanIndex + 1} : {loan.label}
+          </p>
+          <p className="text-[10px] text-muted-foreground">
+            Capital CHF {formatChf(loan.totalDebt)} · Taux moyen {formatPct(loan.weightedRatePct)} ·{" "}
+            {loan.tranches.length} tranche{loan.tranches.length > 1 ? "s" : ""}
+            {loan.isVirtual ? " (saisie directe sans tranche)" : ""}
+          </p>
+        </div>
+        <DeleteMortgageLoanButton loanId={loan.loanId} label={loan.label} />
+      </header>
+
+      {/* Cas saisie directe sans tranche */}
+      {loan.isVirtual && (
+        <div className="flex gap-2 items-start rounded-lg border border-blue-200/50 bg-blue-50/50 dark:bg-blue-900/20 px-2.5 py-1.5 mb-2 text-[10px] text-blue-900 dark:text-blue-100">
+          <span>
+            Ce prêt n&apos;a pas de tranches détaillées. Le calcul utilise capital × taux directement. Ajoutez une ou plusieurs tranches ci-dessous pour affiner.
+          </span>
+        </div>
+      )}
+
+      {/* Liste des tranches */}
+      {loan.tranches.length > 0 && (
+        <ul className="flex flex-col gap-1.5 mb-2">
+          {loan.tranches.map((t) => (
+            <li key={t.id} className="rounded-lg border border-border/60 bg-muted/30 px-2 py-1.5">
+              <form action={updateMortgageTrancheAction} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-end">
+                <input type="hidden" name="trancheId" value={t.id} />
+                <label className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+                  <span className="text-[9px] uppercase text-muted-foreground">Tranche</span>
+                  <input name="name" defaultValue={t.name ?? ""} placeholder="Tranche" className={inputClass} />
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-muted-foreground">Capital CHF</span>
+                  <input name="principal" type="number" step="0.01" defaultValue={t.principal} className={inputClass} />
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-muted-foreground">Taux %</span>
+                  <input name="ratePct" type="number" step="0.0001" defaultValue={t.ratePct} className={inputClass} />
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-muted-foreground">Type</span>
+                  <select name="rateType" defaultValue={t.rateType} className={inputClass}>
+                    <option value="fixed">Fixe</option>
+                    <option value="saron">SARON</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[9px] uppercase text-muted-foreground">Échéance</span>
+                  <input name="endDate" type="date" defaultValue={isoDate(t.endDate)} className={inputClass} />
+                </label>
+                <div className="flex gap-1 justify-end">
+                  <Button type="submit" size="sm" variant="ghost" className="rounded-lg h-7 text-[11px] px-2">
+                    Mettre à jour
+                  </Button>
+                  <Button
+                    formAction={deleteMortgageTrancheAction}
+                    name="trancheId"
+                    value={t.id}
+                    type="submit"
+                    size="sm"
+                    variant="ghost"
+                    className="rounded-lg h-7 text-[11px] px-2 text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Ajout d'une tranche */}
+      <form action={addMortgageTrancheAction} className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 items-end">
+        <input type="hidden" name="loanId" value={loan.loanId} />
+        <label className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+          <span className="text-[9px] uppercase text-muted-foreground">Nouvelle tranche</span>
+          <input name="name" placeholder="ex: T1" className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase text-muted-foreground">Capital CHF</span>
+          <input name="principal" type="number" step="0.01" placeholder="200000" className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase text-muted-foreground">Taux %</span>
+          <input name="ratePct" type="number" step="0.0001" placeholder="1.85" className={inputClass} />
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase text-muted-foreground">Type</span>
+          <select name="rateType" defaultValue="fixed" className={inputClass}>
+            <option value="fixed">Fixe</option>
+            <option value="saron">SARON</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[9px] uppercase text-muted-foreground">Échéance</span>
+          <input name="endDate" type="date" className={inputClass} />
+        </label>
+        <Button type="submit" size="sm" variant="outline" className="rounded-lg h-8 text-xs gap-1">
+          <Plus className="w-3.5 h-3.5" />
+          Ajouter
+        </Button>
+      </form>
+    </div>
   )
 }
 

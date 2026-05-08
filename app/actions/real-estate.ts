@@ -400,6 +400,20 @@ export async function resetPropertyFinancingAction(propertyId: string) {
   revalidatePath("/real-estate")
 }
 
+/** Supprime un prêt hypothécaire (et toutes ses tranches). */
+export async function deleteMortgageLoanAction(loanId: string) {
+  const { householdId } = await requireOwnerHousehold()
+  const loan = await prisma.mortgageLoan.findFirst({
+    where: { id: loanId },
+    include: { realEstateProperty: true },
+  })
+  if (!loan || loan.realEstateProperty.householdId !== householdId) throw new Error("Prêt introuvable")
+  const propertyId = loan.realEstatePropertyId
+  await prisma.mortgageLoan.delete({ where: { id: loanId } })
+  revalidatePath(`/real-estate/${propertyId}/financing`)
+  revalidatePath("/real-estate")
+}
+
 export async function updateMortgageTrancheAction(formData: FormData) {
   const { householdId } = await requireOwnerHousehold()
   const trancheId = String(formData.get("trancheId") ?? "")

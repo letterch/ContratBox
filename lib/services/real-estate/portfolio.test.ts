@@ -149,6 +149,51 @@ export function runPortfolioUnitTests() {
   assert.ok(Math.abs(userExample.finance.monthlyInterest - 446.5) < 0.02, `interest=${userExample.finance.monthlyInterest}`)
   assert.ok(Math.abs(userExample.finance.monthlyAmortization - 593.75) < 0.02, `amort=${userExample.finance.monthlyAmortization}`)
 
+  // Cas 3b : exemple utilisateur avec un prêt parasite (520 000 @ 0.69 %).
+  //   Sans suppression, intérêts = (570000×0.94 + 520000×0.69)/12 = 745.50.
+  //   La vue détaillée doit lister les 2 prêts pour permettre à l'UI de les supprimer.
+  const userExampleWithExtra = buildPropertyView({
+    id: "p3b",
+    name: "Mon bien",
+    address: null,
+    propertyType: "apartment",
+    investmentKind: "rental",
+    purchaseValueChf: null,
+    purchaseDate: null,
+    valuationChf: null,
+    amortizationRatePct: 1.25,
+    amortizationMode: "direct",
+    mortgageLoans: [
+      {
+        id: "lA",
+        label: "Dette",
+        loanKind: "mortgage",
+        amortizationMode: "direct",
+        principalTotal: 0,
+        amortizationRatePct: 0,
+        tranches: [
+          { id: "tA", name: "T1", principal: 570_000, ratePct: 0.94, rateType: "fixed", startDate: null, endDate: null },
+        ],
+      },
+      {
+        id: "lB",
+        label: "Hypothèque ancien",
+        loanKind: "mortgage",
+        amortizationMode: "direct",
+        principalTotal: 520_000,
+        amortizationRatePct: 0.69,
+        tranches: [],
+      },
+    ],
+    charges: [],
+    leases: [],
+  })
+  // Vue détaillée : 2 prêts visibles
+  assert.equal(userExampleWithExtra.mortgageLoans.length, 2)
+  assert.equal(userExampleWithExtra.mortgageLoans[1]!.isVirtual, true)
+  // Le calcul reproduit bien le cas problématique (cohérence avec la donnée)
+  assert.ok(Math.abs(userExampleWithExtra.finance.monthlyInterest - 745.5) < 0.05)
+
   // Cas 4 : ancien modèle — 1 prêt mortgage + 1 prêt amortization legacy.
   //   On vérifie qu'il n'y a PAS de double comptage avec le taux du bien.
   const legacy = buildPropertyView({
