@@ -4,10 +4,10 @@ import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
 export const DOCUMENT_CONTEXT_PER_CONTRACT_CHARS = 5200
 
 /** Budget total pour les pièces jointes importées depuis l’assistant IA (plusieurs fichiers). */
-export const DOCUMENT_CONTEXT_AI_ATTACHMENTS_TOTAL_CHARS = 28_000
+export const DOCUMENT_CONTEXT_AI_ATTACHMENTS_TOTAL_CHARS = 56_000
 
 /** Max par pièce jointe (répartition si plusieurs imports actifs). */
-export const DOCUMENT_CONTEXT_PER_AI_ATTACHMENT_CHARS = 12_000
+export const DOCUMENT_CONTEXT_PER_AI_ATTACHMENT_CHARS = 24_000
 
 /** Taille cible d'un chunk pour futur index vectoriel / RAG par document. */
 export const DOCUMENT_RAG_CHUNK_TARGET_CHARS = 3400

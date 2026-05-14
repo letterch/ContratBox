@@ -21,7 +21,9 @@ import {
   Trash2,
   Loader2,
   FileText,
+  MessageSquarePlus,
 } from "lucide-react"
+import Markdown from "react-markdown"
 import { MULTILINGUAL_SUMMARY_PROMPT } from "@/lib/services/ai-chat-language"
 import type { ContractDecisionAnalysisPayload } from "@/lib/schemas/contract-decision-analysis"
 import { DecisionInsightCard } from "@/components/ai/decision-insight-card"
@@ -102,6 +104,8 @@ export default function AIPage() {
   const [activeContract, setActiveContract] = useState<string | null>(null)
   const [decision, setDecision] = useState<DecisionState | null>(null)
   const [analyzingDecision, setAnalyzingDecision] = useState(false)
+  const [threadId, setThreadId] = useState<string | null>(null)
+  const [quotaInfo, setQuotaInfo] = useState<{ limit: number | null; used: number; remaining: number | null } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -257,12 +261,15 @@ export default function AIPage() {
           message: resolvedMessage,
           activeContractId: activeContract,
           attachmentIds: selectedAttachmentIds.length ? selectedAttachmentIds : undefined,
+          threadId,
         }),
       })
       const data = await res.json()
       if (!res.ok) {
         throw new Error(data?.error || "Erreur IA")
       }
+      if (data.threadId) setThreadId(data.threadId)
+      if (data.quota) setQuotaInfo(data.quota)
       setMessages((prev) => [
         ...prev,
         {
@@ -284,6 +291,11 @@ export default function AIPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const startNewConversation = () => {
+    setThreadId(null)
+    setMessages(initialMessages)
   }
 
   return (
@@ -479,6 +491,23 @@ export default function AIPage() {
               </div>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            {quotaInfo && quotaInfo.limit != null && (
+              <span className="text-[10px] text-muted-foreground">
+                {quotaInfo.remaining ?? 0}/{quotaInfo.limit} questions restantes
+              </span>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="rounded-xl h-8 text-xs gap-1.5"
+              onClick={startNewConversation}
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Nouvelle conversation</span>
+            </Button>
+          </div>
         </div>
 
         <div className="lg:hidden px-4 py-2 border-b border-border bg-muted/25 space-y-2">
@@ -568,9 +597,29 @@ export default function AIPage() {
                     ? "bg-primary text-primary-foreground rounded-tr-sm"
                     : "bg-card border border-border text-foreground rounded-tl-sm shadow-card"
                 )}>
-                  {msg.content.split("\n").map((line, j) => (
-                    <p key={j} className={j > 0 ? "mt-2" : ""}>{line}</p>
-                  ))}
+                  {msg.role === "assistant" ? (
+                    <Markdown
+                      components={{
+                        h2: (props) => <h2 className="font-semibold text-base mt-3 mb-1" {...props} />,
+                        h3: (props) => <h3 className="font-semibold text-sm mt-2 mb-1" {...props} />,
+                        ul: (props) => <ul className="list-disc pl-4 space-y-0.5 my-1" {...props} />,
+                        ol: (props) => <ol className="list-decimal pl-4 space-y-0.5 my-1" {...props} />,
+                        li: (props) => <li className="text-sm" {...props} />,
+                        p: (props) => <p className="my-1.5" {...props} />,
+                        strong: (props) => <strong className="font-semibold" {...props} />,
+                        table: (props) => <div className="overflow-x-auto my-2"><table className="text-xs border-collapse w-full" {...props} /></div>,
+                        thead: (props) => <thead className="bg-muted/50" {...props} />,
+                        th: (props) => <th className="border border-border px-2 py-1 text-left font-medium" {...props} />,
+                        td: (props) => <td className="border border-border px-2 py-1" {...props} />,
+                      }}
+                    >
+                      {msg.content}
+                    </Markdown>
+                  ) : (
+                    msg.content.split("\n").map((line, j) => (
+                      <p key={j} className={j > 0 ? "mt-2" : ""}>{line}</p>
+                    ))
+                  )}
                 </div>
                 {msg.sources && msg.sources.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">

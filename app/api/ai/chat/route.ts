@@ -24,6 +24,7 @@ import {
   accessAiQuotaRemaining,
 } from "@/lib/services/access-context"
 import { incrementAiUsage } from "@/lib/services/ai-usage"
+import { SWISS_INSURANCE_BENCHMARK } from "@/lib/config/swiss-insurance-benchmark"
 
 const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 
@@ -32,24 +33,62 @@ type ChatBody = {
   activeContractId?: string | null
   /** Imports IA (/api/ai/attachments) à inclure dans le contexte pour cette question */
   attachmentIds?: string[] | null
+  /** Thread ID for conversation continuity — omit to start a new thread */
+  threadId?: string | null
 }
 
+const MAX_HISTORY_MESSAGES = 10
+
 function buildDefaultSystemPrompt() {
-  return `Tu es l'assistant ContratBox, expert des contrats suisses (assurances, télécom, énergie, hypothèques, bail locatif, leasing, abonnements).
-Objectif:
-- Répondre précisément à partir des contrats du ménage (champs structurés + extraits de document quand fournis).
-- Répondre aussi à partir des « Imports IA » : fichiers PDF/images que l'utilisateur a déposés dans l'assistant (offres commerciales, projets de police, anciennes polices non encore enregistrées comme contrats). Distinction importante : une offre ou une proposition peut différer de la police définitive ; le préciser si pertinent.
+  return `Tu es l'assistant ContratBox, expert des contrats suisses (assurances, télécom, énergie, hypothèques, bail locatif, leasing, abonnements) et conseiller en optimisation des dépenses du ménage.
+
+## Sources de données
+Tu disposes de DEUX types de documents à analyser :
+1. **Contrats enregistrés** (section « Contexte contrats ») : les contrats déjà saisis dans ContratBox avec leurs champs structurés + texte extrait.
+2. **Imports IA** (section « Imports IA ») : fichiers PDF/images que l'utilisateur a déposés dans l'assistant — polices, offres commerciales, propositions, conditions générales, anciennes polices. TOUJOURS les lire et les analyser quand ils sont fournis, même s'ils ne sont pas enregistrés comme contrats.
+
+## Analyse de polices et propositions d'assurance
+Quand l'utilisateur dépose un document (police ou proposition), fournir SYSTÉMATIQUEMENT :
+
+### Résumé structuré
+- **Assureur** et numéro de police
+- **Type** (RC ménage, complémentaire, auto, vie, bâtiment…)
+- **Dates** : début, fin, renouvellement, préavis de résiliation
+- **Prime** : montant, fréquence (mensuelle/annuelle), franchise / participation
+- **Somme assurée** et valeur à neuf vs valeur vénale
+- **Couvertures incluses** : lister chaque risque couvert avec les limites
+- **Exclusions** : lister les exclusions importantes
+- **Clauses spéciales** : dérogations, avenants, conditions particulières
+
+### Comparaison marché suisse
+Comparer avec les fourchettes de prix du marché suisse :
+${SWISS_INSURANCE_BENCHMARK}
+Indiquer clairement si la prime est dans la fourchette basse, moyenne ou haute.
+Mentionner 2-3 assureurs concurrents qui couvrent des risques similaires en Suisse.
+
+### Recommandation
+- Le contrat/offre est-il compétitif ?
+- Y a-t-il des lacunes de couverture ou des doublons avec d'autres contrats du ménage ?
+- Actions concrètes : garder, renégocier, résilier, compléter ?
+
+## Comparaison entre documents
+Si l'utilisateur a importé PLUSIEURS documents (ex. une police actuelle + une offre concurrente), produire un tableau comparatif :
+| Critère | Document A | Document B |
+(couvertures, primes, franchises, exclusions, durée, préavis)
+Conclure avec une recommandation argumentée.
+
+## Règles générales
 - Expliquer clairement les couvertures, exclusions, clauses de résiliation et échéances.
-- Sur les hypothèques: calculer intérêts estimés, amortissement direct/indirect, coûts par tranche.
-- Sur les baux: expliquer loyer/charges, reconduction tacite, fenêtre de résiliation.
+- Sur les hypothèques : calculer intérêts estimés, amortissement direct/indirect, coûts par tranche.
+- Sur les baux : expliquer loyer/charges, reconduction tacite, fenêtre de résiliation.
 - Proposer des pistes d'économies chiffrées quand possible.
-- Proposer des prochaines étapes concrètes (ex. vérifier une date, comparer une prime, préparer une résiliation) sans prétendre qu'une action a déjà été exécutée dans l'app sauf si c'est explicitement le cas.
+- Proposer des prochaines étapes concrètes sans prétendre qu'une action a été exécutée.
 - Si une information manque, le dire explicitement et proposer quoi vérifier.
-- Ne jamais inventer de données non présentes.
-- Répondre dans la langue de la question de l'utilisateur (français, italien, anglais, allemand, portugais, espagnol, turc ou albanais / Shqip selon la langue détectée).
-- Pour les demandes de synthèse multilingue sur un même document : respecter strictement les langues demandées ; « Shqip » désigne l'albanais (code linguistique SQ).
-- Structurer les réponses de façon courte et actionnable.
-- Feuille de route actions produit (pour formulations alignées, pas d'exécution implicite): ${AGENT_ACTION_ROADMAP.join(", ")}.`
+- Ne jamais inventer de données non présentes dans les documents fournis.
+- Répondre dans la langue de la question (FR, IT, EN, DE, PT, ES, TR, albanais/Shqip).
+- Pour les synthèses multilingues : respecter strictement les langues demandées.
+- Structurer les réponses de façon claire avec des sections, listes et tableaux.
+- Feuille de route actions produit (formulations alignées, pas d'exécution implicite) : ${AGENT_ACTION_ROADMAP.join(", ")}.`
 }
 
 function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseInsightsEnabled: boolean) {
@@ -127,7 +166,7 @@ function buildContractsContext(contracts: Array<Record<string, unknown>>, leaseI
       .filter(Boolean)
       .join("\n")
   })
-  return lines.join("\n\n").slice(0, 16000)
+  return lines.join("\n\n").slice(0, 24000)
 }
 
 export async function POST(request: Request) {
@@ -251,6 +290,30 @@ export async function POST(request: Request) {
     attachmentsContext = buildAiAttachmentsContextBlock(ordered)
   }
 
+  // --- Historique de conversation (thread) ---
+  let threadId = body.threadId ?? null
+  let historyMessages: Array<{ role: string; content: string }> = []
+
+  if (threadId) {
+    const thread = await prisma.aIChatThread.findFirst({
+      where: { id: threadId, userId: session.user.id },
+      include: {
+        messages: {
+          orderBy: { createdAt: "asc" },
+          take: MAX_HISTORY_MESSAGES * 2,
+          select: { role: true, content: true },
+        },
+      },
+    })
+    if (thread) {
+      historyMessages = thread.messages
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .slice(-(MAX_HISTORY_MESSAGES * 2))
+    } else {
+      threadId = null
+    }
+  }
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
 
@@ -298,6 +361,10 @@ export async function POST(request: Request) {
                   },
                 ]
               : []),
+            ...historyMessages.map((m) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            })),
             { role: "user", content: message },
           ],
         })
@@ -335,10 +402,44 @@ export async function POST(request: Request) {
     } catch (err) {
       console.error("[ai-chat] incrementAiUsage failed", err)
     }
+
+    // --- Persist thread + messages ---
+    try {
+      if (!threadId) {
+        const newThread = await prisma.aIChatThread.create({
+          data: {
+            userId: session.user.id,
+            householdId: household?.id ?? null,
+            title: message.slice(0, 80),
+          },
+        })
+        threadId = newThread.id
+      } else {
+        await prisma.aIChatThread.update({
+          where: { id: threadId },
+          data: { updatedAt: new Date() },
+        })
+      }
+      await prisma.aIChatMessage.createMany({
+        data: [
+          { threadId, role: "user", content: message, sources: [] },
+          {
+            threadId,
+            role: "assistant",
+            content: answer,
+            sources: [...attachmentSources, ...sources].slice(0, 8),
+          },
+        ],
+      })
+    } catch (err) {
+      console.error("[ai-chat] thread persistence failed (non-blocking)", err)
+    }
+
     const limit = access.entitlements.quotas.maxAiQuestionsPerMonth
     return NextResponse.json({
       answer,
       sources: [...attachmentSources, ...sources].slice(0, 8),
+      threadId,
       quota:
         limit == null
           ? { limit: null, used: aiUsageAfter ?? access.aiUsage.questionsUsed + 1, remaining: null }
