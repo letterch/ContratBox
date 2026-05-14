@@ -263,12 +263,12 @@ export function BillOcrUpload({
       {contracts.length > 0 && (
         <div>
           <Label>Lier à un contrat (optionnel)</Label>
-          <Select value={contractId} onValueChange={setContractId}>
+          <Select value={contractId || "__none__"} onValueChange={(v) => setContractId(v === "__none__" ? "" : v)}>
             <SelectTrigger>
               <SelectValue placeholder="Aucun contrat" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Aucun</SelectItem>
+              <SelectItem value="__none__">Aucun</SelectItem>
               {contracts.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
                   {c.title || c.provider || c.id}

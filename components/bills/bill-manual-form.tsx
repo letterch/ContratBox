@@ -184,7 +184,7 @@ export function BillManualForm({
               <SelectValue placeholder="Aucun contrat" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Aucun</SelectItem>
+              <SelectItem value="__none__">Aucun</SelectItem>
               {contracts.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
                   {c.title || c.provider || c.id}

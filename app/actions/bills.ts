@@ -41,6 +41,14 @@ function parseAmount(value: FormDataEntryValue | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/** Normalise une valeur d'ID issue d'un Select ; convertit "__none__" / "" → null. */
+function normalizeOptionalId(value: FormDataEntryValue | null): string | null {
+  if (!value || typeof value !== "string") return null
+  const v = value.trim()
+  if (!v || v === "__none__") return null
+  return v
+}
+
 export type CreateBillActionResult =
   | { ok: true; billId: string }
   | { ok: false; error: string }
@@ -86,8 +94,8 @@ export async function createBillAction(formData: FormData): Promise<CreateBillAc
     recurrence: (BILL_RECURRENCES as readonly string[]).includes(recurrence)
       ? (recurrence as BillRecurrence)
       : "one_off",
-    contractId: ((formData.get("contractId") as string | null) || null) || null,
-    memberId: ((formData.get("memberId") as string | null) || null) || null,
+    contractId: normalizeOptionalId(formData.get("contractId")),
+    memberId: normalizeOptionalId(formData.get("memberId")),
     isHouseholdWide: formData.get("isHouseholdWide") === "on",
     notes: (formData.get("notes") as string | null) ?? null,
     source: "manual",
@@ -185,8 +193,8 @@ export async function updateBillAction(billId: string, formData: FormData): Prom
       recurrence && (BILL_RECURRENCES as readonly string[]).includes(recurrence)
         ? (recurrence as BillRecurrence)
         : undefined,
-    contractId: (formData.get("contractId") as string | null) || undefined,
-    memberId: (formData.get("memberId") as string | null) || undefined,
+    contractId: normalizeOptionalId(formData.get("contractId")) ?? undefined,
+    memberId: normalizeOptionalId(formData.get("memberId")) ?? undefined,
     isHouseholdWide:
       formData.get("isHouseholdWide") != null ? formData.get("isHouseholdWide") === "on" : undefined,
     notes: (formData.get("notes") as string | null) ?? undefined,
