@@ -234,6 +234,24 @@ export async function saveContractFromUpload(data: SaveContractInput) {
     },
   })
 
+  try {
+    const { upsertContractPremiumSnapshot } = await import("@/lib/services/premium-history")
+    await upsertContractPremiumSnapshot({
+      householdId: household.id,
+      contractId: contract.id,
+      provider: contract.provider,
+      category: contract.category,
+      memberId: contract.memberId,
+      policyNumber: contract.policyNumber,
+      premiumAmount: contract.premiumAmount,
+      premiumFrequency: contract.premiumFrequency,
+      startDate: contract.startDate,
+      rawExtraction: contract.rawExtraction,
+    })
+  } catch (err) {
+    console.warn("[saveContractFromUpload] premium snapshot failed", err)
+  }
+
   const extractionRaw = (data.rawExtraction ?? {}) as Record<string, unknown>
   const tranches = Array.isArray(extractionRaw.mortgageTranches)
     ? extractionRaw.mortgageTranches
@@ -483,6 +501,23 @@ export async function deleteContractById(contractId: string) {
   }
   await prisma.contract.delete({ where: { id: contractId } })
   return { ok: true }
+}
+
+/** Supprime tous les contrats du ménage (repartir à zéro). Conserve l’historique de primes. */
+export async function deleteAllContractsAction(opts?: { wipePremiumHistory?: boolean }) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Non authentifié")
+  const household = await prisma.household.findFirst({
+    where: { ownerId: session.user.id },
+    select: { id: true },
+  })
+  if (!household) throw new Error("Ménage introuvable")
+
+  const deleted = await prisma.contract.deleteMany({ where: { householdId: household.id } })
+  if (opts?.wipePremiumHistory) {
+    await prisma.contractPremiumHistory.deleteMany({ where: { householdId: household.id } })
+  }
+  return { ok: true as const, deleted: deleted.count }
 }
 
 export type UpdateContractInput = {

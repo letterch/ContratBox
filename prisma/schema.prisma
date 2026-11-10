@@ -106,6 +106,7 @@ model Household {
   aiAssistantAttachments AiAssistantAttachment[]
   reminders Reminder[]
   nextLetterActionLogs NextLetterActionLog[]
+  premiumHistory ContractPremiumHistory[]
 }
 
 model HouseholdMember {
@@ -287,6 +288,33 @@ model Contract {
   convertedFromInboxItems AdministrativeItem[] @relation("AdministrativeItemConvertedContract")
   decisionInsight ContractDecisionInsight?
   nextLetterActionLogs NextLetterActionLog[]
+  premiumHistory ContractPremiumHistory[]
+}
+
+/// Historique annuel des primes (courbe d’évolution sans garder d’anciennes polices actives)
+model ContractPremiumHistory {
+  id              String   @id @default(cuid())
+  householdId     String
+  contractId      String?
+  /** Année civile de la police / période (ex. 2024, 2027). */
+  year            Int
+  provider        String?
+  category        String?
+  memberId        String?
+  policyNumber    String?
+  monthlyPremium  Decimal  @db.Decimal(12, 2)
+  annualPremium   Decimal? @db.Decimal(12, 2)
+  currency        String   @default("CHF")
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  contract  Contract?   @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, year])
+  @@index([householdId, provider, category, year])
+  @@index([contractId, year])
 }
 
 /// Snapshot décisionnel / économies — alimenté par règles + IA (optionnel)

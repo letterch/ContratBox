@@ -106,6 +106,23 @@ export async function createContract(data: CreateContractInput) {
       data: { contractId: contract.id },
     })
   }
+  try {
+    const { upsertContractPremiumSnapshot } = await import("@/lib/services/premium-history")
+    await upsertContractPremiumSnapshot({
+      householdId: contract.householdId,
+      contractId: contract.id,
+      provider: contract.provider,
+      category: contract.category,
+      memberId: contract.memberId,
+      policyNumber: contract.policyNumber,
+      premiumAmount: contract.premiumAmount,
+      premiumFrequency: contract.premiumFrequency,
+      startDate: contract.startDate,
+      rawExtraction: contract.rawExtraction,
+    })
+  } catch (err) {
+    console.warn("[createContract] premium snapshot failed", err)
+  }
   return contract
 }
 
@@ -124,8 +141,26 @@ export async function updateContract(
       data: { contractId: contract.id },
     })
   }
-  return prisma.contract.update({
+  const updated = await prisma.contract.update({
     where: { id: contractId },
     data: update as Parameters<typeof prisma.contract.update>[0]["data"],
   })
+  try {
+    const { upsertContractPremiumSnapshot } = await import("@/lib/services/premium-history")
+    await upsertContractPremiumSnapshot({
+      householdId: updated.householdId,
+      contractId: updated.id,
+      provider: updated.provider,
+      category: updated.category,
+      memberId: updated.memberId,
+      policyNumber: updated.policyNumber,
+      premiumAmount: updated.premiumAmount,
+      premiumFrequency: updated.premiumFrequency,
+      startDate: updated.startDate,
+      rawExtraction: updated.rawExtraction,
+    })
+  } catch (err) {
+    console.warn("[updateContract] premium snapshot failed", err)
+  }
+  return updated
 }

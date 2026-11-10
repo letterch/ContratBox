@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { ChevronRight, FileText } from "lucide-react"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
+import { DeleteContractButton } from "@/components/contracts/delete-contract-button"
 
 const statusConfig = {
   ok: { label: "Actif", class: "bg-[oklch(0.56_0.15_162)]/10 text-[oklch(0.56_0.15_162)] border-[oklch(0.56_0.15_162)]/20" },
@@ -99,18 +100,17 @@ export function RecentContracts({ contracts = [] }: { contracts?: ContractRow[] 
               ? Math.ceil((keyDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
               : null
             return (
-              <Link
+              <div
                 key={c.id}
-                href={`/contracts/${c.id}`}
                 className="flex items-center gap-3 sm:gap-4 px-5 py-3.5 hover:bg-muted/40 transition-colors group"
               >
-                <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
+                <Link href={`/contracts/${c.id}`} className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
                   <FileText className="w-4 h-4 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
+                </Link>
+                <Link href={`/contracts/${c.id}`} className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{c.provider ?? "Sans nom"}</p>
                   <p className="text-xs text-muted-foreground">{c.category ?? "—"} · {memberLabel}</p>
-                </div>
+                </Link>
                 <div className="hidden sm:flex items-center gap-3">
                   <Badge variant="outline" className={`text-[10px] border ${status.class}`}>
                     {status.label}
@@ -133,8 +133,8 @@ export function RecentContracts({ contracts = [] }: { contracts?: ContractRow[] 
                     <p className="text-[10px] text-muted-foreground mt-0.5">{formatRelative(daysLeft)}</p>
                   )}
                 </div>
-                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors hidden sm:block" />
-              </Link>
+                <DeleteContractButton contractId={c.id} redirectTo={null} compact />
+              </div>
             )
           })
         )}

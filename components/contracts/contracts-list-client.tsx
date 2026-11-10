@@ -9,6 +9,8 @@ import { Search, LayoutGrid, List, Filter, FileText, Clock, Users } from "lucide
 import { cn } from "@/lib/utils"
 import { CONTRACT_CATEGORIES } from "@/lib/constants"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
+import { DeleteContractButton } from "@/components/contracts/delete-contract-button"
+import { DashboardReset } from "@/components/dashboard/dashboard-reset"
 
 type ContractItem = {
   id: string
@@ -229,23 +231,26 @@ export function ContractsListClient({
                 ? Math.ceil((keyDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
                 : null
               return (
-                <Link
+                <div
                   key={c.id}
-                  href={`/contracts/${c.id}`}
-                  className="bg-card rounded-2xl border border-border p-5 shadow-card hover:shadow-elevated transition-all hover:-translate-y-0.5 group flex flex-col gap-4"
+                  className="bg-card rounded-2xl border border-border p-5 shadow-card hover:shadow-elevated transition-all hover:-translate-y-0.5 group flex flex-col gap-4 relative"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                    <Link href={`/contracts/${c.id}`} className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
                       <FileText className="w-5 h-5 text-muted-foreground" />
+                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={cn("text-[10px] border", status.class)}>
+                        {status.label}
+                      </Badge>
+                      <DeleteContractButton contractId={c.id} redirectTo={null} compact />
                     </div>
-                    <Badge variant="outline" className={cn("text-[10px] border", status.class)}>
-                      {status.label}
-                    </Badge>
                   </div>
-                  <div>
+                  <Link href={`/contracts/${c.id}`}>
                     <p className="font-semibold text-foreground">{c.provider ?? "Sans nom"}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{c.contractType ?? c.category ?? "—"}</p>
-                  </div>
+                    <p className="text-[10px] text-muted-foreground mt-1">{memberLabel}</p>
+                  </Link>
                   <div className="flex items-end justify-between mt-auto pt-3 border-t border-border">
                     <div>
                       <p className="text-lg font-bold text-foreground">
@@ -266,7 +271,7 @@ export function ContractsListClient({
                       </p>
                     </div>
                   </div>
-                </Link>
+                </div>
               )
             })}
           </div>
@@ -281,14 +286,14 @@ export function ContractsListClient({
                 ? Math.ceil((keyDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
                 : null
               return (
-                <Link key={c.id} href={`/contracts/${c.id}`} className="flex items-center gap-4 px-5 py-4 hover:bg-muted/40 transition-colors group">
-                  <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
+                <div key={c.id} className="flex items-center gap-4 px-5 py-4 hover:bg-muted/40 transition-colors group">
+                  <Link href={`/contracts/${c.id}`} className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
                     <FileText className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
+                  </Link>
+                  <Link href={`/contracts/${c.id}`} className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{c.provider ?? "Sans nom"}</p>
                     <p className="text-xs text-muted-foreground">{c.contractType ?? c.category ?? "—"}</p>
-                  </div>
+                  </Link>
                   <Badge variant="outline" className={cn("text-[10px] border hidden sm:flex", status.class)}>
                     {status.label}
                   </Badge>
@@ -306,12 +311,16 @@ export function ContractsListClient({
                     </p>
                     <p className="text-[10px] text-muted-foreground">/{c.premiumFrequency === "annual" ? "an" : "mois"}</p>
                   </div>
-                  <span className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors hidden sm:block" />
-                </Link>
+                  <DeleteContractButton contractId={c.id} redirectTo={null} compact />
+                </div>
               )
             })}
           </div>
         )}
+
+        {initialContracts.length > 0 ? (
+          <DashboardReset contractCount={initialContracts.length} />
+        ) : null}
       </div>
     </div>
   )
@@ -389,38 +398,40 @@ function ContractsByMember({
                 const amount = c.premiumAmount != null ? Number(c.premiumAmount) : null
                 const keyDate = getKeyDate(c)
                 return (
-                  <Link
+                  <div
                     key={c.id}
-                    href={`/contracts/${c.id}`}
                     className="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 transition-colors"
                   >
-                    <FileText className="w-4 h-4 text-muted-foreground" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.provider ?? "Sans nom"}</p>
-                      <p className="text-xs text-muted-foreground">{c.contractType ?? c.category ?? "—"}</p>
-                    </div>
-                    <Badge variant="outline" className={cn("hidden sm:inline-flex text-[10px] border", status.class)}>
-                      {status.label}
-                    </Badge>
-                    <div className="hidden md:block text-right text-xs text-muted-foreground min-w-32">
-                      {keyDate ? (
-                        <>
-                          <div>{getDateLabel(c)}</div>
-                          <div className="text-foreground/80">{formatDate(keyDate)}</div>
-                        </>
-                      ) : (
-                        "—"
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-semibold">
-                        {amount != null ? `CHF ${amount.toLocaleString("fr-CH")}` : "—"}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        /{c.premiumFrequency === "annual" ? "an" : c.premiumFrequency === "quarterly" ? "trim." : "mois"}
-                      </p>
-                    </div>
-                  </Link>
+                    <Link href={`/contracts/${c.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                      <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{c.provider ?? "Sans nom"}</p>
+                        <p className="text-xs text-muted-foreground">{c.contractType ?? c.category ?? "—"}</p>
+                      </div>
+                      <Badge variant="outline" className={cn("hidden sm:inline-flex text-[10px] border", status.class)}>
+                        {status.label}
+                      </Badge>
+                      <div className="hidden md:block text-right text-xs text-muted-foreground min-w-32">
+                        {keyDate ? (
+                          <>
+                            <div>{getDateLabel(c)}</div>
+                            <div className="text-foreground/80">{formatDate(keyDate)}</div>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">
+                          {amount != null ? `CHF ${amount.toLocaleString("fr-CH")}` : "—"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          /{c.premiumFrequency === "annual" ? "an" : c.premiumFrequency === "quarterly" ? "trim." : "mois"}
+                        </p>
+                      </div>
+                    </Link>
+                    <DeleteContractButton contractId={c.id} redirectTo={null} compact />
+                  </div>
                 )
               })}
             </div>

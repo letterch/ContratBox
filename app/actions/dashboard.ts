@@ -22,6 +22,10 @@ import {
   syncDecisionTriggersToReminders,
 } from "@/lib/services/reminder-sync"
 import { buildHouseholdCashflow } from "@/lib/services/budget-engine"
+import {
+  getHouseholdPremiumTrend,
+  syncActiveContractsPremiumSnapshots,
+} from "@/lib/services/premium-history"
 
 export async function getDashboardData() {
   const session = await auth()
@@ -166,6 +170,27 @@ export async function getDashboardData() {
     }
   }
 
+  // Snapshot année courante pour les contrats actifs (base de la courbe d’évolution)
+  try {
+    await syncActiveContractsPremiumSnapshots(
+      household.id,
+      household.contracts.map((c) => ({
+        id: c.id,
+        provider: c.provider,
+        category: c.category,
+        memberId: c.memberId,
+        policyNumber: c.policyNumber,
+        premiumAmount: c.premiumAmount,
+        premiumFrequency: c.premiumFrequency,
+        startDate: c.startDate,
+        rawExtraction: c.rawExtraction,
+      }))
+    )
+  } catch (err) {
+    console.warn("[getDashboardData] premium sync failed", err)
+  }
+  const premiumTrend = await getHouseholdPremiumTrend(household.id)
+
   return {
     household: {
       id: household.id,
@@ -179,6 +204,7 @@ export async function getDashboardData() {
       annual: Math.max(annualTotal, costInsights.annualTotal),
     },
     cashflow,
+    premiumTrend,
     costInsights: features.globalSavingsAssistantEnabled ? costInsights : null,
     realEstate: {
       monthlyIncome: realEstateIncomeMonthly,
