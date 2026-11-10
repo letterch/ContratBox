@@ -14,6 +14,8 @@ export const PLAN_FEATURE_KEYS = [
   "module_tasks",
   "module_real_estate",
   "module_bills",
+  "module_budget",
+  "module_actions",
   "module_multi_household",
   "module_advanced_care",
 ] as const
@@ -47,6 +49,8 @@ const soloFeatures: Record<PlanFeatureKey, boolean> = {
   module_tasks: true,
   module_real_estate: true,
   module_bills: true,
+  module_budget: true,
+  module_actions: true,
   module_multi_household: false,
   module_advanced_care: false,
 }
@@ -68,10 +72,12 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
       module_ai_chat: true,
       module_inbox: false,
       module_tasks: false,
-      /** Vue immo simple déjà en prod — conservée sur free ; affinages “bail pro” viendront plus tard. */
-      module_real_estate: true,
-      /** Module factures accessible en free (jusqu'à maxBills). */
+      /** Immobilier hors MVP fusion — derrière abonnement. */
+      module_real_estate: false,
       module_bills: true,
+      /** Budget basique accessible en free. */
+      module_budget: true,
+      module_actions: true,
       module_multi_household: false,
       module_advanced_care: false,
     },
@@ -79,7 +85,7 @@ export const PLANS: Record<PlanSlug, PlanDefinition> = {
   solo: {
     slug: "solo",
     label: "Solo",
-    description: "Tout illimité : contrats, factures, questions IA.",
+    description: "Tout illimité : contrats, factures, budget, questions IA.",
     quotas: {
       maxContracts: null,
       maxBills: null,

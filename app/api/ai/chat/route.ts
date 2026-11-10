@@ -25,6 +25,8 @@ import {
 } from "@/lib/services/access-context"
 import { incrementAiUsage } from "@/lib/services/ai-usage"
 import { SWISS_INSURANCE_BENCHMARK } from "@/lib/config/swiss-insurance-benchmark"
+import { draftCancellationLetter } from "@/lib/services/letter-draft"
+import { buildContractCancellationNextLetterUrl } from "@/lib/services/nextletter"
 
 const TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 60000)
 
@@ -219,6 +221,8 @@ export async function POST(request: Request) {
           provider: true,
           contractType: true,
           category: true,
+          policyNumber: true,
+          memberId: true,
           premiumAmount: true,
           premiumFrequency: true,
           startDate: true,
@@ -379,9 +383,76 @@ export async function POST(request: Request) {
     }
 
     const data = await res.json()
-    const answer = String(data?.choices?.[0]?.message?.content ?? "").trim()
+    let answer = String(data?.choices?.[0]?.message?.content ?? "").trim()
     if (!answer) {
       return NextResponse.json({ error: "Réponse IA vide" }, { status: 502 })
+    }
+
+    // Mode lettre de résiliation : génère un texte copiable + lien NextLetter
+    let letterDraft: { body: string; nextLetterUrl: string; contractId: string } | null = null
+    const wantsLetter = /lettre|r[eé]sili|k[uü]ndig|disdetta|cancellation\s+letter|r[eé]dige/i.test(message)
+    if (wantsLetter && household) {
+      const target =
+        (body.activeContractId
+          ? contractsForContext.find((c) => c.id === body.activeContractId)
+          : null) ??
+        contractsForContext.find((c) => c.cancellationDeadline || c.provider) ??
+        null
+      if (target) {
+        const member = target.memberId
+          ? await prisma.householdMember.findFirst({
+              where: { id: target.memberId, householdId: household.id },
+              select: { firstName: true, lastName: true },
+            })
+          : null
+        const memberName = member
+          ? `${member.firstName}${member.lastName ? ` ${member.lastName}` : ""}`
+          : session.user.name ?? null
+        const bodyLetter = draftCancellationLetter({
+          provider: target.provider,
+          policyNumber: target.policyNumber,
+          contractTitle: target.title,
+          category: target.category,
+          memberName,
+          noticeDays: target.cancellationNoticeDays,
+          renewalDateIso: target.renewalDate
+            ? new Date(target.renewalDate as Date).toISOString().slice(0, 10)
+            : null,
+          cancellationDeadlineIso: target.cancellationDeadline
+            ? new Date(target.cancellationDeadline as Date).toISOString().slice(0, 10)
+            : null,
+          senderName: session.user.name,
+        })
+        const nextLetterUrl = buildContractCancellationNextLetterUrl({
+          provider: target.provider,
+          policyNumber: target.policyNumber,
+          contractTitle: target.title,
+          category: target.category,
+          noticeDays: target.cancellationNoticeDays,
+          renewalDateIso: target.renewalDate
+            ? new Date(target.renewalDate as Date).toISOString().slice(0, 10)
+            : null,
+          memberName,
+          letterBody: bodyLetter,
+        })
+        letterDraft = { body: bodyLetter, nextLetterUrl, contractId: target.id }
+        answer = `${answer}\n\n---\n**Lettre de résiliation prête à copier**\n\n\`\`\`\n${bodyLetter}\n\`\`\`\n\nOuvrez NextLetter pour l'envoyer : ${nextLetterUrl}`
+        try {
+          await prisma.nextLetterActionLog.create({
+            data: {
+              householdId: household.id,
+              userId: session.user.id,
+              contractId: target.id,
+              actionType: "contract_cancellation",
+              status: "draft",
+              letterBody: bodyLetter,
+              payload: { nextLetterUrl, source: "ai_chat" },
+            },
+          })
+        } catch (err) {
+          console.warn("[ai-chat] nextLetterActionLog create failed", err)
+        }
+      }
     }
 
     const sources = contractsForContext.slice(0, 3).map((c) => c.title || c.provider || c.contractType || c.id)
@@ -440,6 +511,7 @@ export async function POST(request: Request) {
       answer,
       sources: [...attachmentSources, ...sources].slice(0, 8),
       threadId,
+      ...(letterDraft ? { letterDraft } : {}),
       quota:
         limit == null
           ? { limit: null, used: aiUsageAfter ?? access.aiUsage.questionsUsed + 1, remaining: null }

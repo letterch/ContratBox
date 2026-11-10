@@ -3,12 +3,15 @@ import {
   buildOpenRouterChatCompletionBody,
   OPENROUTER_CHAT_COMPLETIONS_URL,
 } from "@/lib/services/openrouter-models"
+import { detectProviderInText, normalizeSwissProvider } from "@/lib/config/swiss-insurers"
 
 export type ExtractedContractData = {
   title?: string | null
   provider?: string | null
   contractType?: string | null
   suggestedCategory?: ContractCategorySlug | null
+  /** Nom de l'assuré / titulaire détecté (pour matching membre famille). */
+  insuredPersonName?: string | null
   monthlyPremium?: number | null
   annualPremium?: number | null
   startDate?: string | null
@@ -102,6 +105,7 @@ Extrait les champs suivants du texte du contrat ci-dessous. Réponds UNIQUEMENT 
 - provider (string, nom de l'entreprise/prestataire)
 - contractType (string, ex: "Assurance ménage", "Internet + TV")
 - suggestedCategory (string, un des slugs: ${Object.keys(CONTRACT_CATEGORIES).join(", ")})
+- insuredPersonName (string, nom complet de l'assuré / titulaire / preneur d'assurance si mentionné)
 - monthlyPremium (number, en CHF)
 - annualPremium (number, en CHF)
 - startDate (string ISO date ou JJ.MM.AAAA)
@@ -151,6 +155,8 @@ Règles d'interprétation:
 - Extrais aussi la date de début et la durée minimale d'engagement si présentes.
 - Pour les hypothèques, extrais les tranches séparément quand présentes (LIBOR/SARON/fixe etc).
 - Pour les baux, extrais loyer hors charges, charges, renouvellement tacite et délai de résiliation.
+- Extrais le nom de l'assuré (Versicherte Person / preneur / titulaire) dans insuredPersonName.
+- Pour rawConfidence : renseigne 0-100 pour chaque champ important (provider, premium, dates, insuredPersonName, category).
 
 Réponds uniquement avec le JSON, rien d'autre.`
 }
@@ -231,6 +237,45 @@ function normalizeExtraction(input: Record<string, unknown>): ExtractedContractD
   if ((!out.cancellationNoticeDays || out.cancellationNoticeDays <= 0) && out.leaseNoticeText) {
     out.cancellationNoticeDays = parseNoticeTextToDays(out.leaseNoticeText)
   }
+  // Normalisation assureur suisse (lexicon)
+  if (out.provider) {
+    const norm = normalizeSwissProvider(out.provider)
+    if (norm.provider) out.provider = norm.provider
+    if (!out.suggestedCategory && norm.suggestedCategory) {
+      out.suggestedCategory = norm.suggestedCategory as ContractCategorySlug
+    }
+    if (norm.confidence > 0) {
+      out.rawConfidence = { ...(out.rawConfidence ?? {}), provider: Math.round(norm.confidence * 100) }
+    }
+  }
+  if (typeof out.insuredPersonName === "string") {
+    out.insuredPersonName = out.insuredPersonName.trim() || null
+  }
+  return out
+}
+
+/** Enrichit l'extraction avec détection lexicon si le LLM a raté le provider. */
+export function enrichExtractionWithLexicon(
+  data: ExtractedContractData,
+  extractedText: string
+): ExtractedContractData {
+  const out = { ...data }
+  if (!out.provider) {
+    const hit = detectProviderInText(extractedText)
+    if (hit.provider) {
+      out.provider = hit.provider
+      if (!out.suggestedCategory && hit.suggestedCategory) {
+        out.suggestedCategory = hit.suggestedCategory as ContractCategorySlug
+      }
+      out.rawConfidence = {
+        ...(out.rawConfidence ?? {}),
+        provider: Math.round(hit.confidence * 100),
+      }
+    }
+  } else {
+    const norm = normalizeSwissProvider(out.provider)
+    if (norm.provider) out.provider = norm.provider
+  }
   return out
 }
 
@@ -297,7 +342,7 @@ export async function extractContractData(text: string): Promise<ContractExtract
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     console.warn("[extraction] OPENROUTER_API_KEY manquant")
-    return { data: {}, failureReason: "no_api_key" }
+    return { data: enrichExtractionWithLexicon({}, text), failureReason: "no_api_key" }
   }
   let lastError: unknown = null
   let lastHadContent = false
@@ -331,7 +376,7 @@ export async function extractContractData(text: string): Promise<ContractExtract
       if (!content) throw new Error("Réponse vide")
       lastHadContent = true
       const parsed = parseModelJson(content)
-      return { data: normalizeExtraction(parsed) }
+      return { data: enrichExtractionWithLexicon(normalizeExtraction(parsed), text) }
     } catch (err) {
       lastError = err
       if (attempt < 2) await new Promise((r) => setTimeout(r, 1000))

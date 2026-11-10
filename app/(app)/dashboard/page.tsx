@@ -15,7 +15,7 @@ export default async function DashboardPage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-0.5">
-              <h1 className="text-lg font-bold text-foreground">Tableau de bord</h1>
+              <h1 className="text-lg font-bold text-foreground">Accueil</h1>
               <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-muted text-xs text-muted-foreground">
                 {data?.household?.name ?? "Mon ménage"}
                 <ChevronDown className="w-3 h-3" />

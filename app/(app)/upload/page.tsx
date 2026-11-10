@@ -24,6 +24,12 @@ type ExtractedState = {
   file: { r2Key: string; name: string; mimeType: string; sizeBytes: number }
   extractionWarning?: string
   textExtractionMeta?: DocumentTextExtractionMetaV1
+  memberMatch?: {
+    memberId: string | null
+    confidence: number
+    matchedName: string | null
+    isHouseholdWide: boolean
+  }
 }
 
 function ReviewStep({
@@ -40,13 +46,16 @@ function ReviewStep({
   saveError: string
 }) {
   const e = extractedState.extracted
+  const match = extractedState.memberMatch
   const [provider, setProvider] = useState(String(e.provider ?? ""))
   const [category, setCategory] = useState(String(e.suggestedCategory ?? e.category ?? "other"))
-  const [memberId, setMemberId] = useState<string>("")
+  const [memberId, setMemberId] = useState<string>(match?.memberId ?? "")
   const [isHouseholdWide, setIsHouseholdWide] = useState(
-    e.suggestedCategory === "health_basic" || e.suggestedCategory === "health_supplementary"
-      ? false
-      : !e.memberId
+    match
+      ? match.isHouseholdWide || !match.memberId
+      : e.suggestedCategory === "health_basic" || e.suggestedCategory === "health_supplementary"
+        ? false
+        : !e.memberId
   )
   const [premiumAmount, setPremiumAmount] = useState(String(e.monthlyPremium ?? e.annualPremium ?? ""))
   const [premiumFreq, setPremiumFreq] = useState((e.premiumFrequency as string) ?? "monthly")
@@ -179,6 +188,12 @@ function ReviewStep({
               {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.firstName} {m.lastName ?? ""}</SelectItem>)}
             </SelectContent>
           </Select>
+          {match?.matchedName && match.memberId ? (
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Détecté automatiquement : {match.matchedName}
+              {match.confidence ? ` (${Math.round(match.confidence * 100)} %)` : ""}. Vérifiez avant d’enregistrer.
+            </p>
+          ) : null}
           {(category === "health_basic" || category === "health_supplementary") && isHouseholdWide && (
             <p className="text-[11px] text-[oklch(0.57_0.20_25)] mt-1">
               Astuce: l'assurance maladie est généralement nominative, assigne ce contrat à un membre.
@@ -347,6 +362,7 @@ export default function UploadPage() {
       extracted: result.extracted as Record<string, unknown>,
       extractedText: result.extractedText,
       file: result.file,
+      ...(result.memberMatch ? { memberMatch: result.memberMatch } : {}),
       ...(result.extractionWarning ? { extractionWarning: result.extractionWarning } : {}),
       ...("textExtractionMeta" in result && result.textExtractionMeta
         ? { textExtractionMeta: result.textExtractionMeta }

@@ -16,6 +16,7 @@ import type { ContractCategorySlug } from "@/lib/constants"
 import { getContractById } from "@/lib/services/contract"
 import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 import { getInboxItemContractSeed, markAdministrativeItemConverted } from "@/lib/services/administrative-inbox"
+import { matchMemberFromExtraction, type MemberMatchResult } from "@/lib/services/member-match"
 import type { DocumentTextExtractionMetaV1 } from "@/lib/types/document-text"
 import type { Prisma } from "@prisma/client"
 
@@ -38,6 +39,8 @@ export type UploadAndExtractResult = {
   extracted: ExtractedContractData
   extractedText: string
   file: { r2Key: string; name: string; mimeType: string; sizeBytes: number }
+  /** Suggestion membre famille après matching OCR. */
+  memberMatch?: MemberMatchResult
   /** Avertissement lisible si l'extraction a échoué ou est vide malgré un PDF texte. */
   extractionWarning?: string
   /** Métadonnées OCR / PDF natif (stockées aussi sur Document et dans rawExtraction.documentTextMeta). */
@@ -81,11 +84,24 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
     }
   }
 
+  const household = await prisma.household.findFirst({
+    where: { ownerId: session.user.id },
+    include: { members: { select: { id: true, firstName: true, lastName: true, role: true } } },
+  })
+  const memberMatch = household
+    ? matchMemberFromExtraction({
+        members: household.members,
+        insuredPersonName: extracted.insuredPersonName,
+        extractedText: extractedText || "",
+      })
+    : undefined
+
   return {
     ok: true,
     extracted,
     extractedText: extractedText || "",
     file: { r2Key, name: file.name, mimeType, sizeBytes: file.size },
+    ...(memberMatch ? { memberMatch } : {}),
     ...(extractionWarning ? { extractionWarning } : {}),
     ...(textExtractionMeta ? { textExtractionMeta } : {}),
   }

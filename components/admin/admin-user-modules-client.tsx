@@ -27,7 +27,9 @@ const MODULE_LABELS: Record<string, string> = {
   module_inbox: "Inbox admin",
   module_tasks: "Tâches",
   module_real_estate: "Immobilier",
-  module_bills: "Factures",
+  module_bills: "Dépenses / Factures",
+  module_budget: "Budget",
+  module_actions: "Actions / Lettres",
   module_multi_household: "Multi-foyer",
   module_advanced_care: "Care / Pro",
 }

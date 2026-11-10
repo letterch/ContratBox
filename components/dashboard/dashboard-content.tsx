@@ -15,9 +15,12 @@ import { DashboardEngagementStrip } from "@/components/dashboard/dashboard-engag
 import type { TimelineEvent } from "@/lib/services/reminder-timeline"
 import type { ActionableRecommendation, NextStepBannerPayload } from "@/lib/services/recommendation-engine"
 import type { PendingReminderLite } from "@/lib/services/reminder-sync"
+import type { BudgetCashflow } from "@/lib/services/budget-engine"
+import Link from "next/link"
 
 type DashboardPayload = {
   totals?: { monthly?: number; annual?: number }
+  cashflow?: BudgetCashflow
   household?: {
     contractCount?: number
     members?: { id: string; firstName: string; lastName?: string | null }[]
@@ -106,6 +109,8 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
     })
   }, [data?.topActions, activeMemberId, filteredContractIds])
 
+  const cashflow = data?.cashflow
+
   return (
     <>
       <SummaryCards
@@ -114,6 +119,36 @@ export function DashboardContent({ data }: { data: DashboardPayload | null }) {
         contractCount={filteredContracts.length}
         alertCount={cancellationContracts.length}
       />
+      {cashflow ? (
+        <div className="rounded-2xl border border-border bg-card p-4 sm:p-5 shadow-card">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="text-sm font-semibold text-foreground">Cashflow ménage</h3>
+            <Link href="/budget" className="text-xs text-primary hover:underline">
+              Voir le budget
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Revenus</p>
+              <p className="text-sm font-semibold">CHF {cashflow.incomeMonthly.toLocaleString("fr-CH")}/mois</p>
+            </div>
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Primes</p>
+              <p className="text-sm font-semibold">CHF {cashflow.premiumsMonthly.toLocaleString("fr-CH")}/mois</p>
+            </div>
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Factures</p>
+              <p className="text-sm font-semibold">CHF {cashflow.billsMonthly.toLocaleString("fr-CH")}/mois</p>
+            </div>
+            <div className="rounded-xl bg-muted/40 p-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Net</p>
+              <p className={`text-sm font-semibold ${cashflow.netMonthly < 0 ? "text-destructive" : "text-[oklch(0.56_0.15_162)]"}`}>
+                CHF {cashflow.netMonthly.toLocaleString("fr-CH")}/mois
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <DashboardEngagementStrip />
       <TopActionsBlock actions={filteredTopActions} />
       <RemindersPanel reminders={(data?.pendingReminders ?? []) as Parameters<typeof RemindersPanel>[0]["reminders"]} />

@@ -4,7 +4,7 @@ import { getKeyDateFromContractLike } from "@/lib/services/contract-key-date"
 import { getMortgageMarketBenchmarkRatePct } from "@/lib/services/mortgage-benchmark"
 import { getMortgagePlan, type ContractLike } from "@/lib/services/mortgage"
 
-export type RenewalWindowBucket = "60" | "30" | "7"
+export type RenewalWindowBucket = "90" | "60" | "30" | "7"
 
 export type TriggerKind = "renewal_soon" | "mortgage_maturity" | "cancellation_window"
 
@@ -48,10 +48,11 @@ function daysBetween(from: Date, to: Date): number {
 }
 
 function renewalWindowBucket(days: number): RenewalWindowBucket | null {
-  if (days < 0 || days > 60) return null
+  if (days < 0 || days > 90) return null
   if (days <= 7) return "7"
   if (days <= 30) return "30"
-  return "60"
+  if (days <= 60) return "60"
+  return "90"
 }
 
 function urgencyFromDays(days: number, kind: TriggerKind): DecisionUrgency {
@@ -111,17 +112,20 @@ export function buildContractTriggerEvents(contracts: ContractForTriggers[], now
     const cancelDeadline = deriveCancellationDeadline(c)
     if (cancelDeadline && cancelDeadline >= now) {
       const daysUntil = daysBetween(now, cancelDeadline)
-      if (daysUntil <= 60) {
+      // Rappels J-90 / J-60 / J-30 / J-7
+      if (daysUntil <= 90) {
         const monthly = monthlyPremiumChf(c)
         const impact = monthly > 0 ? Math.round(monthly * 12) : 0
+        const bucket = renewalWindowBucket(daysUntil)
         events.push({
-          id: `${c.id}-cancellation-${cancelDeadline.toISOString().slice(0, 10)}`,
+          id: `${c.id}-cancellation-${cancelDeadline.toISOString().slice(0, 10)}-${bucket ?? "90"}`,
           kind: "cancellation_window",
           contractId: c.id,
           provider: c.provider ?? null,
           category: c.category ?? null,
           daysUntil,
           dueAt: startOfDay(cancelDeadline),
+          windowBucket: bucket ?? undefined,
           title: c.provider ?? "Contrat",
           description: `Délai de résiliation dans ${daysUntil} j. Sans action, renouvellement probable.`,
           recommendedAction: "Envoyer une résiliation ou renégocier avant la date limite.",
@@ -185,7 +189,7 @@ export function buildContractTriggerEvents(contracts: ContractForTriggers[], now
     const keyDate = getKeyDateFromContractLike(c)
     if (!keyDate || keyDate < now) continue
     const daysUntil = daysBetween(now, keyDate)
-    if (daysUntil > 60) continue
+    if (daysUntil > 90) continue
     const bucket = renewalWindowBucket(daysUntil)
     if (!bucket) continue
     const monthly = monthlyPremiumChf(c)

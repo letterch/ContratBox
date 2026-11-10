@@ -2,6 +2,12 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { extractTextFromFile } from "@/lib/services/ocr"
+import {
+  aiAttachmentObjectKey,
+  deleteDocument,
+  isStorageConfigured,
+  uploadDocument,
+} from "@/lib/services/storage"
 
 const MAX_BYTES = 12 * 1024 * 1024
 const MAX_ATTACHMENTS_PER_HOUSEHOLD = 24
@@ -119,9 +125,16 @@ export async function POST(request: Request) {
       const oldest = await prisma.aiAssistantAttachment.findFirst({
         where: { householdId: household.id },
         orderBy: { createdAt: "asc" },
-        select: { id: true },
+        select: { id: true, r2Key: true },
       })
       if (!oldest) break
+      if (oldest.r2Key && isStorageConfigured()) {
+        try {
+          await deleteDocument(oldest.r2Key)
+        } catch (err) {
+          console.warn("[ai-attachments] R2 delete on eviction failed", err)
+        }
+      }
       await prisma.aiAssistantAttachment.delete({ where: { id: oldest.id } })
     }
   }
@@ -157,6 +170,19 @@ export async function POST(request: Request) {
 
     await trimEvictOldest()
 
+    let r2Key: string | null = null
+    let r2Bucket: string | null = null
+    if (isStorageConfigured()) {
+      try {
+        const key = aiAttachmentObjectKey(session.user.id, file.name)
+        const uploaded = await uploadDocument(key, buffer, mimeType)
+        r2Key = uploaded.key
+        r2Bucket = uploaded.bucket
+      } catch (err) {
+        console.warn("[ai-attachments] R2 upload failed (texte conservé)", err)
+      }
+    }
+
     const defaultLabel = String(formData.get("label") ?? "").trim()
     const partLabel =
       batchPrefix && files.length > 1
@@ -172,7 +198,10 @@ export async function POST(request: Request) {
         createdById: session.user.id,
         label,
         mimeType,
+        sizeBytes: file.size,
         kind,
+        r2Key,
+        r2Bucket,
         extractedText: trimmed.slice(0, 950_000),
         textExtractionMeta: textExtractionMeta ? (textExtractionMeta as object) : undefined,
       },
@@ -234,12 +263,21 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Ménage introuvable" }, { status: 404 })
   }
 
-  const deleted = await prisma.aiAssistantAttachment.deleteMany({
+  const existing = await prisma.aiAssistantAttachment.findFirst({
     where: { id, householdId: household.id },
+    select: { id: true, r2Key: true },
   })
-  if (deleted.count === 0) {
+  if (!existing) {
     return NextResponse.json({ error: "Pièce introuvable" }, { status: 404 })
   }
+  if (existing.r2Key && isStorageConfigured()) {
+    try {
+      await deleteDocument(existing.r2Key)
+    } catch (err) {
+      console.warn("[ai-attachments] R2 delete failed", err)
+    }
+  }
+  await prisma.aiAssistantAttachment.delete({ where: { id: existing.id } })
 
   return NextResponse.json({ ok: true })
 }

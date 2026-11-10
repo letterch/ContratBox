@@ -18,8 +18,10 @@ import { buildContractTriggerEvents } from "@/lib/services/trigger-engine"
 import {
   countPendingReminders,
   getPendingRemindersForHousehold,
+  syncBillRemindersForHousehold,
   syncDecisionTriggersToReminders,
 } from "@/lib/services/reminder-sync"
+import { buildHouseholdCashflow } from "@/lib/services/budget-engine"
 
 export async function getDashboardData() {
   const session = await auth()
@@ -32,6 +34,19 @@ export async function getDashboardData() {
       contracts: {
         include: { member: true },
         orderBy: { renewalDate: "asc" },
+      },
+      incomes: { where: { isActive: true } },
+      bills: {
+        where: { status: { not: "cancelled" } },
+        select: {
+          id: true,
+          amount: true,
+          recurrence: true,
+          status: true,
+          memberId: true,
+          dueDate: true,
+          title: true,
+        },
       },
     },
   })
@@ -121,8 +136,14 @@ export async function getDashboardData() {
     contractsWithDerivedDeadline as Parameters<typeof buildContractTriggerEvents>[0]
   )
   await syncDecisionTriggersToReminders(household.id, decisionTriggerEvents)
+  await syncBillRemindersForHousehold(household.id, now)
   const pendingReminders = await getPendingRemindersForHousehold(household.id, 16)
   const pendingReminderCount = await countPendingReminders(household.id)
+  const cashflow = buildHouseholdCashflow({
+    incomes: household.incomes,
+    contracts: household.contracts,
+    bills: household.bills,
+  })
   const timelinePreview = await buildHouseholdTimeline({
     householdId: household.id,
     now,
@@ -157,6 +178,7 @@ export async function getDashboardData() {
       monthly: Math.max(monthlyTotal, costInsights.monthlyTotal),
       annual: Math.max(annualTotal, costInsights.annualTotal),
     },
+    cashflow,
     costInsights: features.globalSavingsAssistantEnabled ? costInsights : null,
     realEstate: {
       monthlyIncome: realEstateIncomeMonthly,

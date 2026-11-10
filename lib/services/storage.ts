@@ -113,6 +113,12 @@ export function billObjectKey(userId: string, filename: string): string {
   return `${userId}/bills/${Date.now()}-${safe}`
 }
 
+/** Imports assistant IA (polices / offres) — binaire conservé pour re-OCR / download. */
+export function aiAttachmentObjectKey(userId: string, filename: string): string {
+  const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_")
+  return `${userId}/ai-attachments/${Date.now()}-${safe}`
+}
+
 export function getStorageDebugConfig() {
   return {
     endpoint: candidateEndpoints[0] ?? "undefined",

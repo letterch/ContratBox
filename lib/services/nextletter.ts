@@ -34,6 +34,8 @@ export function buildContractCancellationNextLetterUrl(input: {
   renewalDateIso?: string | null
   memberName?: string | null
   extraContext?: string | null
+  /** Corps de lettre à coller (tronqué dans l'URL). */
+  letterBody?: string | null
 }) {
   const base = getNextLetterBaseUrl()
   const url = new URL("/compose", base)
@@ -46,6 +48,7 @@ export function buildContractCancellationNextLetterUrl(input: {
   if (input.renewalDateIso) url.searchParams.set("renewal", input.renewalDateIso)
   if (input.memberName) url.searchParams.set("member", input.memberName)
   if (input.extraContext) url.searchParams.set("context", input.extraContext.slice(0, 500))
+  if (input.letterBody) url.searchParams.set("body", input.letterBody.slice(0, 1500))
   return url.toString()
 }
 

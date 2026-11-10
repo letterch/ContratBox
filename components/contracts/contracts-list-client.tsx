@@ -90,7 +90,7 @@ export function ContractsListClient({
   categories: string[]
   members: { id: string; firstName: string; lastName?: string | null }[]
 }) {
-  const [view, setView] = useState<"grid" | "list" | "byMember">("grid")
+  const [view, setView] = useState<"grid" | "list" | "byMember">("byMember")
   const [search, setSearch] = useState("")
   const [activeCategory, setActiveCategory] = useState("Toutes")
   const [activeMember, setActiveMember] = useState("Tous")

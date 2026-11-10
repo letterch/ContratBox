@@ -22,6 +22,8 @@ import {
   Loader2,
   FileText,
   MessageSquarePlus,
+  Copy,
+  ExternalLink,
 } from "lucide-react"
 import Markdown from "react-markdown"
 import { MULTILINGUAL_SUMMARY_PROMPT } from "@/lib/services/ai-chat-language"
@@ -32,9 +34,9 @@ import { createManualReminderFromContract } from "@/app/actions/reminders"
 const suggestions = [
   "Quel contrat puis-je résilier ce mois?",
   "Combien je paie pour mes assurances?",
-  "Mon hypothèque UBS se renouvelle quand?",
-  "Explique-moi la clause de résiliation Swisscom",
+  "Rédige-moi une lettre de résiliation pour ce contrat",
   "Que couvrent les documents importés ? Quelles exclusions principales ?",
+  "Fais un comparatif marché de cette police",
   "Résumé multilingue (FR · IT · EN · DE · PT · ES · TR · SQ)",
 ]
 
@@ -42,6 +44,7 @@ type Message = {
   role: "user" | "assistant"
   content: string
   sources?: string[]
+  letterDraft?: { body: string; nextLetterUrl: string } | null
 }
 
 type ContractItem = {
@@ -276,6 +279,9 @@ export default function AIPage() {
           role: "assistant",
           content: String(data.answer ?? "Je n'ai pas pu répondre à cette question."),
           sources: Array.isArray(data.sources) ? data.sources : [],
+          letterDraft: data.letterDraft
+            ? { body: String(data.letterDraft.body), nextLetterUrl: String(data.letterDraft.nextLetterUrl) }
+            : null,
         },
       ])
     } catch {
@@ -631,6 +637,37 @@ export default function AIPage() {
                     ))}
                   </div>
                 )}
+                {msg.letterDraft?.body ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="rounded-xl h-8 text-xs gap-1.5"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(msg.letterDraft!.body)
+                        toast.success("Lettre copiée — collez-la dans NextLetter")
+                      }}
+                    >
+                      <Copy className="w-3 h-3" />
+                      Copier la lettre
+                    </Button>
+                    {msg.letterDraft.nextLetterUrl ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="rounded-xl h-8 text-xs gap-1.5"
+                        onClick={() =>
+                          window.open(msg.letterDraft!.nextLetterUrl, "_blank", "noopener,noreferrer")
+                        }
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        NextLetter
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           ))}
