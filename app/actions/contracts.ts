@@ -61,7 +61,7 @@ export async function uploadAndExtractContract(formData: FormData): Promise<Uplo
 
   const { text: extractedText, hadText, meta: textExtractionMeta } = await extractTextFromFile(buffer, mimeType)
   const textToExtract = extractedText || "(Document sans texte extrait — saisie manuelle recommandée.)"
-  const extractionOutcome = await extractContractData(textToExtract)
+  const extractionOutcome = await extractContractData(textToExtract, { filenameHint: file.name })
   const extracted = extractionOutcome.data
   const extractionWarning = userFacingExtractionWarning(extractionOutcome, hadText)
 

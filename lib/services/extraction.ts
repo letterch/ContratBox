@@ -3,7 +3,9 @@ import {
   buildOpenRouterChatCompletionBody,
   OPENROUTER_CHAT_COMPLETIONS_URL,
 } from "@/lib/services/openrouter-models"
-import { detectProviderInText, normalizeSwissProvider } from "@/lib/config/swiss-insurers"
+import { normalizeSwissProvider } from "@/lib/config/swiss-insurers"
+import { normalizeOcrExtractedText } from "@/lib/services/ocr-text-normalize"
+import { reconcileExtractionWithDocument } from "@/lib/services/swiss-policy-heuristics"
 
 export type ExtractedContractData = {
   title?: string | null
@@ -147,15 +149,21 @@ Texte du contrat (extrait OCR/PDF) :
 ---
 ${text.slice(0, 12000)}
 ---
-Règles d'interprétation:
-- Si une info est absente: null.
+Règles d'interprétation (STRICTES — ne jamais inventer):
+- Si une info est absente: null. N'invente JAMAIS un assureur (ex. Helvetia) s'il n'apparaît pas dans le texte.
+- Le provider doit être le nom exact trouvé dans le document (Assura, CSS, Mobilière, Helvetia, etc.).
 - Dates au format ISO YYYY-MM-DD quand possible.
+- Pour une police multi-produits (ex. Assura Complementa/Hospita/Natura/Medna) : utilise "Total LCA" ou la somme des primes mensuelles nettes comme monthlyPremium. Ne prends PAS une seule ligne produit pour le total.
+- Attention aux décimales suisses : "13.20" ou "35.95" sont des montants en CHF, PAS 1320.
+- Primes maladie complémentaire mensuelles typiques : 10–150 CHF. Si tu trouves > 500 CHF/mois pour une complémentaire, revérifie (souvent erreur de lecture).
+- "Valable dès le JJ.MM.AAAA" = startDate de la période / année de police.
+- "Entrée en vigueur" peut être antérieure ; "Échéance" = endDate / renouvellement.
 - Si préavis est exprimé en mois/années, renseigne cancellationNoticeValue + cancellationNoticeUnit.
 - Reconnais les formulations "préavis", "Kündigungsfrist", "Frist", "délai de résiliation".
-- Extrais aussi la date de début et la durée minimale d'engagement si présentes.
 - Pour les hypothèques, extrais les tranches séparément quand présentes (LIBOR/SARON/fixe etc).
 - Pour les baux, extrais loyer hors charges, charges, renouvellement tacite et délai de résiliation.
 - Extrais le nom de l'assuré (Versicherte Person / preneur / titulaire) dans insuredPersonName.
+- Catégorie maladie complémentaire LCA → suggestedCategory = "health_supplementary" (pas health_basic).
 - Pour rawConfidence : renseigne 0-100 pour chaque champ important (provider, premium, dates, insuredPersonName, category).
 
 Réponds uniquement avec le JSON, rien d'autre.`
@@ -254,29 +262,13 @@ function normalizeExtraction(input: Record<string, unknown>): ExtractedContractD
   return out
 }
 
-/** Enrichit l'extraction avec détection lexicon si le LLM a raté le provider. */
+/** Enrichit / corrige l'extraction LLM avec lexicon + heuristiques document. */
 export function enrichExtractionWithLexicon(
   data: ExtractedContractData,
-  extractedText: string
+  extractedText: string,
+  filenameHint?: string | null
 ): ExtractedContractData {
-  const out = { ...data }
-  if (!out.provider) {
-    const hit = detectProviderInText(extractedText)
-    if (hit.provider) {
-      out.provider = hit.provider
-      if (!out.suggestedCategory && hit.suggestedCategory) {
-        out.suggestedCategory = hit.suggestedCategory as ContractCategorySlug
-      }
-      out.rawConfidence = {
-        ...(out.rawConfidence ?? {}),
-        provider: Math.round(hit.confidence * 100),
-      }
-    }
-  } else {
-    const norm = normalizeSwissProvider(out.provider)
-    if (norm.provider) out.provider = norm.provider
-  }
-  return out
+  return reconcileExtractionWithDocument(data, extractedText, filenameHint)
 }
 
 /** Raison lorsque `data` ne contient aucune info utile (diagnostic UI / logs). */
@@ -338,11 +330,19 @@ export function userFacingExtractionWarning(
   return undefined
 }
 
-export async function extractContractData(text: string): Promise<ContractExtractionOutcome> {
+export async function extractContractData(
+  text: string,
+  opts?: { filenameHint?: string | null }
+): Promise<ContractExtractionOutcome> {
+  const normalizedText = normalizeOcrExtractedText(text)
+  const filenameHint = opts?.filenameHint ?? null
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     console.warn("[extraction] OPENROUTER_API_KEY manquant")
-    return { data: enrichExtractionWithLexicon({}, text), failureReason: "no_api_key" }
+    return {
+      data: enrichExtractionWithLexicon({}, normalizedText, filenameHint),
+      failureReason: "no_api_key",
+    }
   }
   let lastError: unknown = null
   let lastHadContent = false
@@ -360,7 +360,7 @@ export async function extractContractData(text: string): Promise<ContractExtract
         },
         body: JSON.stringify(
           buildOpenRouterChatCompletionBody({
-            messages: [{ role: "user", content: buildExtractionPrompt(text) }],
+            messages: [{ role: "user", content: buildExtractionPrompt(normalizedText) }],
             max_tokens: 4096,
             temperature: 0,
           })
@@ -376,7 +376,9 @@ export async function extractContractData(text: string): Promise<ContractExtract
       if (!content) throw new Error("Réponse vide")
       lastHadContent = true
       const parsed = parseModelJson(content)
-      return { data: enrichExtractionWithLexicon(normalizeExtraction(parsed), text) }
+      return {
+        data: enrichExtractionWithLexicon(normalizeExtraction(parsed), normalizedText, filenameHint),
+      }
     } catch (err) {
       lastError = err
       if (attempt < 2) await new Promise((r) => setTimeout(r, 1000))
@@ -387,11 +389,12 @@ export async function extractContractData(text: string): Promise<ContractExtract
   console.error("[extraction]", lastError)
   const hint =
     lastError instanceof Error ? sanitizeOpenRouterHint(lastError.message) : sanitizeOpenRouterHint(String(lastError))
+  const fallback = enrichExtractionWithLexicon({}, normalizedText, filenameHint)
   if (lastError instanceof Error && lastError.message === "Réponse vide") {
-    return { data: {}, failureReason: "empty_model_reply", failureHint: hint }
+    return { data: fallback, failureReason: "empty_model_reply", failureHint: hint }
   }
   return {
-    data: {},
+    data: fallback,
     failureReason: lastHadContent ? "json_parse_error" : "api_error",
     failureHint: hint || undefined,
   }
